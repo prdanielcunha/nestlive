@@ -5,3 +5,5 @@ export * from './network/health';
 export * from './audio/meterEngine';
 export * from './audio/meterSocket';
 export * from './audio/meterPriority';
+export * from './audio/audioRuntime';
+export * from './audio/audioApi';
