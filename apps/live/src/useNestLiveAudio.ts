@@ -10,8 +10,6 @@ import {
   type AudioProviderSummary,
   type NestLiveNodeConnection
 } from './audioNodeApiClient';
-import { NestLiveNodeMeterClient } from './nodeClient';
-
 export type AudioConnectionStatus =
   | 'demo'
   | 'connecting'
@@ -67,21 +65,22 @@ export function useNestLiveAudio(
         if (!alive) return;
         setChannels(nextChannels);
 
-        const meterClient = new NestLiveNodeMeterClient();
-        disconnectMeter = meterClient.connect({
-          url: connection.wsUrl,
-          token: connection.token,
-          onFrame: incoming => {
-            if (
-              incoming.providerInstanceId === selected.providerInstanceId
-            ) {
-              setFrame(incoming);
+        disconnectMeter = api.streamMeters(
+          selected.providerInstanceId,
+          {
+            onFrame: incoming => {
+              if (
+                incoming.providerInstanceId ===
+                selected.providerInstanceId
+              ) {
+                setFrame(incoming);
+              }
+            },
+            onStatus: next => {
+              if (alive) setStatus(next);
             }
-          },
-          onStatus: next => {
-            if (alive) setStatus(next);
           }
-        });
+        );
       } catch (cause) {
         if (!alive) return;
         setStatus('error');

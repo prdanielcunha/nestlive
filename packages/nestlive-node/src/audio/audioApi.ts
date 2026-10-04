@@ -213,6 +213,42 @@ export class AudioApiServer {
         return;
       }
 
+      const meterStreamMatch =
+        /^\/v1\/audio\/providers\/([^/]+)\/meters\/stream$/.exec(
+          url.pathname
+        );
+      if (request.method === 'GET' && meterStreamMatch) {
+        const providerInstanceId = decodeURIComponent(meterStreamMatch[1]!);
+        this.options.runtime.getProvider(providerInstanceId);
+
+        response.statusCode = 200;
+        response.setHeader(
+          'content-type',
+          'application/x-ndjson; charset=utf-8'
+        );
+        response.setHeader('cache-control', 'no-store');
+        response.setHeader('connection', 'keep-alive');
+        response.flushHeaders();
+
+        let lastSequence = -1;
+        const timer = setInterval(() => {
+          const frame = this.options.runtime.latestMeter(providerInstanceId);
+          if (!frame || frame.sequence === lastSequence) return;
+          lastSequence = frame.sequence;
+
+          if (response.writableLength > 256 * 1024) return;
+          response.write(
+            JSON.stringify({ type: 'meter.frame', frame }) + '\n'
+          );
+        }, 33);
+
+        request.on('close', () => {
+          clearInterval(timer);
+          if (!response.writableEnded) response.end();
+        });
+        return;
+      }
+
       if (
         request.method === 'GET' &&
         url.pathname === '/v1/network/plan' &&

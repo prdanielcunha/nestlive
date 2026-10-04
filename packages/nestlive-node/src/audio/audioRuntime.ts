@@ -15,6 +15,7 @@ function safetyRank(level: AudioSafetyLevel): number {
 export class NestLiveAudioRuntime {
   private readonly providers = new Map<string, AudioConsoleProvider>();
   private readonly meterBuffers = new Map<string, LatestMeterFrameBuffer>();
+  private readonly latestMeters = new Map<string, import('@millionsnest/nestlive-domain').MeterFrame>();
   private readonly meterAbort = new Map<string, AbortController>();
 
   register(provider: AudioConsoleProvider): void {
@@ -39,6 +40,7 @@ export class NestLiveAudioRuntime {
     await provider.dispose?.();
     this.providers.delete(providerInstanceId);
     this.meterBuffers.delete(providerInstanceId);
+    this.latestMeters.delete(providerInstanceId);
     return true;
   }
 
@@ -80,6 +82,7 @@ export class NestLiveAudioRuntime {
           signal: abort.signal
         })) {
           buffer.push(frame);
+          this.latestMeters.set(providerInstanceId, frame);
           if (abort.signal.aborted) break;
         }
       } catch {
@@ -97,6 +100,10 @@ export class NestLiveAudioRuntime {
 
   takeLatestMeter(providerInstanceId: string) {
     return this.meterBuffers.get(providerInstanceId)?.takeLatest();
+  }
+
+  latestMeter(providerInstanceId: string) {
+    return this.latestMeters.get(providerInstanceId);
   }
 
   async execute(
@@ -196,5 +203,6 @@ export class NestLiveAudioRuntime {
     );
     this.providers.clear();
     this.meterBuffers.clear();
+    this.latestMeters.clear();
   }
 }

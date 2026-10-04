@@ -4,6 +4,7 @@ import type {
   AudioCommandExecution,
   AudioControlCommand,
   AudioSafetyLevel,
+  MeterFrame,
   NetworkInterface
 } from '@millionsnest/nestlive-domain';
 
@@ -184,6 +185,90 @@ export class NestLiveAudioApiClient {
       method: 'POST',
       body: JSON.stringify({ address })
     });
+  }
+
+  streamMeters(
+    providerInstanceId: string,
+    input: {
+      onFrame: (frame: MeterFrame) => void;
+      onStatus?: (
+        status: 'connecting' | 'online' | 'offline'
+      ) => void;
+    }
+  ): () => void {
+    const controller = new AbortController();
+    const url = new URL(
+      `/v1/audio/providers/${encodeURIComponent(
+        providerInstanceId
+      )}/meters/stream`,
+      this.httpBaseUrl
+    );
+
+    input.onStatus?.('connecting');
+
+    void (async () => {
+      try {
+        const response = await fetch(url, {
+          cache: 'no-store',
+          signal: controller.signal,
+          headers: {
+            authorization: `Bearer ${this.connection.token}`
+          },
+          targetAddressSpace: targetAddressSpace(url)
+        } as RequestInit & {
+          targetAddressSpace?: 'local' | 'loopback';
+        });
+
+        if (!response.ok || !response.body) {
+          throw new Error(`meter_stream_http_${response.status}`);
+        }
+
+        input.onStatus?.('online');
+        const reader = response.body
+          .pipeThrough(new TextDecoderStream())
+          .getReader();
+        let buffer = '';
+
+        while (!controller.signal.aborted) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += value;
+
+          let newline = buffer.indexOf('\n');
+          while (newline >= 0) {
+            const line = buffer.slice(0, newline).trim();
+            buffer = buffer.slice(newline + 1);
+
+            if (line) {
+              try {
+                const parsed = JSON.parse(line) as {
+                  type?: string;
+                  frame?: MeterFrame;
+                };
+                if (
+                  parsed.type === 'meter.frame' &&
+                  parsed.frame
+                ) {
+                  input.onFrame(parsed.frame);
+                }
+              } catch {
+                // One invalid telemetry frame never tears down the stream.
+              }
+            }
+            newline = buffer.indexOf('\n');
+          }
+        }
+      } catch (error) {
+        if (
+          !(error instanceof DOMException &&
+            error.name === 'AbortError')
+        ) {
+          input.onStatus?.('offline');
+        }
+      }
+    })();
+
+    return () => controller.abort();
   }
 
   async providers(): Promise<AudioProviderSummary[]> {
