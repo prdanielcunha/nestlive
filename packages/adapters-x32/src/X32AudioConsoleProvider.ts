@@ -362,7 +362,7 @@ export class X32AudioConsoleProvider implements AudioConsoleProvider {
             continue;
           }
 
-          const leaf = channel[2];
+          const leaf = channel[2] ?? '';
           let patch: Record<string, unknown> | undefined;
           if (leaf === 'mix/fader') {
             const value = firstNumber(message);
@@ -381,7 +381,7 @@ export class X32AudioConsoleProvider implements AudioConsoleProvider {
           } else if (/^mix\/\d{2}\/level$/.test(leaf)) {
             const value = firstNumber(message);
             if (value !== undefined) {
-              const busIndex = Number(channel[3]);
+              const busIndex = Number(channel[4]);
               patch = {
                 busSend: {
                   busId: `bus-${String(busIndex).padStart(2, '0')}`,
