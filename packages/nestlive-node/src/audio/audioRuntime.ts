@@ -49,7 +49,8 @@ export class NestLiveAudioRuntime {
     intervalMs = 40
   ): Promise<void> {
     const provider = this.getProvider(providerInstanceId);
-    if (!provider.subscribeMeters) {
+    const subscribeMeters = provider.subscribeMeters?.bind(provider);
+    if (!subscribeMeters) {
       throw new Error('audio_meter_not_supported');
     }
 
@@ -60,7 +61,7 @@ export class NestLiveAudioRuntime {
 
     void (async () => {
       try {
-        for await (const frame of provider.subscribeMeters({
+        for await (const frame of subscribeMeters({
           intervalMs,
           signal: abort.signal
         })) {
