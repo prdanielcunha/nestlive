@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import dgram from 'node:dgram';
 import net from 'node:net';
 
@@ -8,13 +9,17 @@ export interface HiqnetFrameEvidence {
   remotePort: number;
   capturedAt: string;
   bytes: number;
+  sha256: string;
   hexPrefix: string;
+  hexPayload?: string;
 }
 
 export interface HiqnetCaptureHarnessOptions {
   localAddress?: string;
   port?: number;
   onFrame?: (frame: HiqnetFrameEvidence) => void;
+  captureFullPayload?: boolean;
+  maxFrames?: number;
 }
 
 /**
@@ -29,10 +34,16 @@ export class HiqnetCaptureHarness {
   private readonly udp = dgram.createSocket({ type: 'udp4', reuseAddr: true });
   private readonly tcp = net.createServer();
   private readonly frames: HiqnetFrameEvidence[] = [];
+  private readonly maxFrames: number;
+  private droppedFrames = 0;
   private started = false;
 
   constructor(private readonly options: HiqnetCaptureHarnessOptions = {}) {
     this.port = options.port ?? 3804;
+    this.maxFrames = Math.max(
+      100,
+      Math.min(500_000, options.maxFrames ?? 100_000)
+    );
   }
 
   async start(): Promise<void> {
@@ -79,6 +90,20 @@ export class HiqnetCaptureHarness {
     return this.frames.map(frame => ({ ...frame }));
   }
 
+  stats(): {
+    capturedFrames: number;
+    droppedFrames: number;
+    port: number;
+    started: boolean;
+  } {
+    return {
+      capturedFrames: this.frames.length,
+      droppedFrames: this.droppedFrames,
+      port: this.port,
+      started: this.started
+    };
+  }
+
   async stop(): Promise<void> {
     if (!this.started) return;
     await Promise.all([
@@ -96,6 +121,7 @@ export class HiqnetCaptureHarness {
     remoteAddress: string,
     remotePort: number
   ): void {
+    const bytes = Buffer.from(message);
     const frame: HiqnetFrameEvidence = {
       transport,
       direction: 'received',
@@ -103,9 +129,18 @@ export class HiqnetCaptureHarness {
       remotePort,
       capturedAt: new Date().toISOString(),
       bytes: message.byteLength,
-      hexPrefix: Buffer.from(message).subarray(0, 32).toString('hex')
+      sha256: createHash('sha256').update(bytes).digest('hex'),
+      hexPrefix: bytes.subarray(0, 32).toString('hex'),
+      ...(this.options.captureFullPayload
+        ? { hexPayload: bytes.toString('hex') }
+        : {})
     };
+
+    if (this.frames.length >= this.maxFrames) {
+      this.frames.shift();
+      this.droppedFrames += 1;
+    }
     this.frames.push(frame);
-    this.options.onFrame?.(frame);
+    this.options.onFrame?.({ ...frame });
   }
 }
