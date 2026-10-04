@@ -4,9 +4,9 @@
 
 | Fase | Estado | Situação |
 |---|---|---|
-| A0 — contratos de áudio e multi-rede | **em implementação** | contratos, safety, meters e simulador |
-| A1 — Multi-network Node | próxima | Ethernet + Wi-Fi USB, binding explícito |
-| A2 — Meter Engine | próxima | smoothing, peak hold, clip, stale |
+| A0 — contratos de áudio e multi-rede | **implementado em fundação** | contratos, safety, meters e simulador |
+| A1 — Multi-network Node | **iniciado** | enumeração, subnet conflict, candidatos e binding explícito |
+| A2 — Meter Engine | **iniciado** | smoothing, peak hold, clip e stale detection |
 | A3 — X32 | próxima | provider real + teste físico |
 | A4 — Mix UI premium | planejada | desktop/tablet/mobile |
 | A5 — Soundcraft physical spike | depende de hardware | capabilities reais |
@@ -15,16 +15,42 @@
 | A8 — Soundcheck + contexto da escala | planejada | — |
 | A9 — Remote Mix | planejada | — |
 
-## Gate A0
+## A0 — gate técnico
 
-A0 fecha somente quando:
+A fundação agora possui:
 
-- o domínio não contém lógica específica de X32/Soundcraft;
-- dois adapters podem implementar o mesmo contrato;
-- o simulador gera meters e state patches;
-- capabilities inexistentes não aparecem;
-- safety classifica ações perigosas;
-- `live_mix` permanece controlado por feature flag.
+- domínio neutro, sem marca;
+- capability set de áudio;
+- safety por capability;
+- `MeterFrame`;
+- `NetworkInterface`;
+- `ProviderNetworkBinding`;
+- console simulada com meters e state patches;
+- testes de contrato.
+
+A0 ainda precisa passar no CI da branch antes de ser marcado como fechado.
+
+## A1 — o que já existe
+
+- enumeração das interfaces do sistema operacional;
+- classificação Ethernet / Wi‑Fi / USB Wi‑Fi / virtual;
+- cálculo de alcance por subnet;
+- detecção inicial de conflito entre sub-redes;
+- seleção de candidatos para alcançar a mesa;
+- criação de binding explícito sem mudar rede do Windows.
+
+Ainda faltam: gateways/metric, health ativo, persistência após reboot, detecção de troca de adaptador e wizard.
+
+## A2 — o que já existe
+
+- attack/release visual;
+- peak hold;
+- peak decay;
+- clip;
+- semantic meter state;
+- stale detection separada de “sem sinal”.
+
+Ainda faltam: WebSocket LAN, backpressure/rate limiting, prioridade de comandos e stress test com muitos canais.
 
 ## Regra de migração
 
