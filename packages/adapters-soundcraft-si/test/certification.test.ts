@@ -48,7 +48,7 @@ describe('Soundcraft physical certification gate', () => {
       manifest
     );
 
-    await expect(provider.getChannels()).rejects.toThrow(
+    expect(() => provider.getChannels()).toThrow(
       'soundcraft_capability_not_certified'
     );
   });
