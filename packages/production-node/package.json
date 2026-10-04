@@ -18,7 +18,7 @@
     "qrcode": "^1.5.4",
     "@millionsnest/nestlive-adapter-resolume": "0.1.0",
     "@millionsnest/nestlive-adapter-propresenter": "0.1.0",
-    "@millionsnest/nestlive-adapters-production": "0.0.1"
+    "@millionsnest/nestlive-adapters-production": "0.1.0"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
