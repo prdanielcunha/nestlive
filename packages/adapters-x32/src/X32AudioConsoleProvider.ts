@@ -6,6 +6,7 @@ import type {
   AudioConsoleProvider,
   AudioConsoleState,
   AudioGroup,
+  AudioStatePatch,
   AudioSubscriptionScope,
   MeterFrame,
   MeterValue
@@ -277,6 +278,93 @@ export class X32AudioConsoleProvider implements AudioConsoleProvider {
       { pan: observed },
       startedAt
     );
+  }
+
+  async *subscribeState(
+    scope: AudioSubscriptionScope = {}
+  ): AsyncIterable<AudioStatePatch> {
+    const renewRemote = async () => {
+      await this.transport.send('/xremote');
+    };
+
+    await renewRemote();
+    const renew = setInterval(() => {
+      void renewRemote();
+    }, 8000);
+
+    try {
+      for await (const message of this.transport.messages(scope.signal)) {
+        const channel = /^\/ch\/(\d{2})\/(mix\/(fader|on|pan)|config\/name)$/.exec(
+          message.address
+        );
+        if (channel) {
+          const index = Number(channel[1]);
+          const channelId = `ch-${String(index).padStart(2, '0')}`;
+          if (scope.channelIds?.length && !scope.channelIds.includes(channelId)) {
+            continue;
+          }
+
+          const leaf = channel[2];
+          let patch: Record<string, unknown> | undefined;
+          if (leaf === 'mix/fader') {
+            const value = firstNumber(message);
+            if (value !== undefined) patch = { faderDb: x32LevelToDb(value) };
+          } else if (leaf === 'mix/on') {
+            const value = firstNumber(message);
+            if (value !== undefined) patch = { mute: value < 0.5 };
+          } else if (leaf === 'mix/pan') {
+            const value = firstNumber(message);
+            if (value !== undefined) patch = { pan: value * 2 - 1 };
+          } else if (leaf === 'config/name') {
+            const value = firstString(message);
+            if (value !== undefined) patch = { name: value.trim() };
+          }
+
+          if (patch) {
+            yield {
+              providerInstanceId: this.providerInstanceId,
+              sequence: ++this.meterSequence,
+              capturedAt: Date.now(),
+              scope: 'channel',
+              targetId: channelId,
+              patch
+            };
+          }
+          continue;
+        }
+
+        const dca = /^\/dca\/(\d)\/(fader|on|config\/name)$/.exec(
+          message.address
+        );
+        if (dca) {
+          const id = `dca-${dca[1]}`;
+          const leaf = dca[2];
+          const number = firstNumber(message);
+          const text = firstString(message);
+          const patch =
+            leaf === 'fader' && number !== undefined
+              ? { faderDb: x32LevelToDb(number) }
+              : leaf === 'on' && number !== undefined
+                ? { mute: number < 0.5 }
+                : leaf === 'config/name' && text !== undefined
+                  ? { name: text.trim() }
+                  : undefined;
+
+          if (patch) {
+            yield {
+              providerInstanceId: this.providerInstanceId,
+              sequence: ++this.meterSequence,
+              capturedAt: Date.now(),
+              scope: 'group',
+              targetId: id,
+              patch
+            };
+          }
+        }
+      }
+    } finally {
+      clearInterval(renew);
+    }
   }
 
   async *subscribeMeters(
