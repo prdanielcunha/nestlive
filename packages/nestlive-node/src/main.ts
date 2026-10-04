@@ -1,12 +1,20 @@
-import { hostname } from 'node:os';
+import { hostname, networkInterfaces, platform } from 'node:os';
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { SimulatedAudioConsoleProvider } from '@millionsnest/nestlive-adapter-audio-sim';
-import { X32AudioConsoleProvider } from '@millionsnest/nestlive-adapter-x32';
+import {
+  discoverX32OnSubnet,
+  X32AudioConsoleProvider
+} from '@millionsnest/nestlive-adapter-x32';
 import {
   AccessTokenStore,
   AudioApiServer,
+  AudioProviderConfigStore,
+  buildGuidedNetworkPlan,
+  buildPreDiscoveryNetworkPlan,
   defaultNestLiveStateDir,
+  enumerateNetworkInterfaces,
+  inspectWindowsNetworkInterfaces,
   MeterWebSocketServer,
   NestLiveAudioRuntime,
   NestLiveDiscoveryBroadcaster,
@@ -28,6 +36,9 @@ async function main(): Promise<void> {
   const tokenStore = new AccessTokenStore(
     path.join(STATE_DIR, 'access-tokens.json')
   );
+  const providerConfigStore = new AudioProviderConfigStore(
+    path.join(STATE_DIR, 'audio-providers.json')
+  );
   const pairing = new PairingManager(tokenStore, {
     onPin: value => {
       console.log(
@@ -42,24 +53,124 @@ async function main(): Promise<void> {
   });
 
   const runtime = new NestLiveAudioRuntime();
-  const providerIds: string[] = [];
+  const providerIds = new Set<string>();
 
-  const x32Target = process.env.NESTLIVE_X32_TARGET?.trim();
-  if (x32Target) {
-    const id = process.env.NESTLIVE_X32_ID || 'x32-primary';
-    runtime.register(
-      new X32AudioConsoleProvider({
-        providerInstanceId: id,
-        targetAddress: x32Target,
-        localAddress:
-          process.env.NESTLIVE_X32_LOCAL_ADDRESS?.trim() || undefined
-      })
+  const inspectNetwork = async () => {
+    if (platform() === 'win32') {
+      return inspectWindowsNetworkInterfaces(NODE_ID);
+    }
+
+    const mapped = Object.fromEntries(
+      Object.entries(networkInterfaces()).map(([name, addresses]) => [
+        name,
+        addresses?.map(item => ({
+          address: item.address,
+          family: item.family as 'IPv4' | 'IPv6',
+          internal: item.internal,
+          mac: item.mac,
+          netmask: item.netmask,
+          cidr: item.cidr
+        }))
+      ])
     );
-    providerIds.push(id);
-  } else if (process.env.NESTLIVE_SIMULATOR !== '0') {
+    return enumerateNetworkInterfaces(NODE_ID, mapped);
+  };
+
+  const registerX32 = async (input: {
+    targetAddress: string;
+    localAddress: string;
+    networkInterfaceId?: string;
+    persist: boolean;
+  }) => {
+    const id = process.env.NESTLIVE_X32_ID || 'x32-primary';
+    if (runtime.hasProvider(id)) await runtime.removeProvider(id);
+
+    const provider = new X32AudioConsoleProvider({
+      providerInstanceId: id,
+      targetAddress: input.targetAddress,
+      localAddress: input.localAddress
+    });
+
+    const probe = await provider.probe();
+    if (!probe.reachable) {
+      await provider.dispose();
+      throw new Error('x32_probe_failed');
+    }
+
+    runtime.register(provider);
+    providerIds.add(id);
+    await runtime.startMeters(id, 40);
+
+    if (input.persist) {
+      await providerConfigStore.save({
+        kind: 'x32',
+        providerInstanceId: id,
+        targetAddress: input.targetAddress,
+        localAddress: input.localAddress,
+        networkInterfaceId: input.networkInterfaceId,
+        updatedAt: new Date().toISOString()
+      });
+    }
+
+    return {
+      providerInstanceId: id,
+      state: await provider.getConsoleState()
+    };
+  };
+
+  const configuredTarget = process.env.NESTLIVE_X32_TARGET?.trim();
+  if (configuredTarget) {
+    const localAddress =
+      process.env.NESTLIVE_X32_LOCAL_ADDRESS?.trim();
+    if (!localAddress) {
+      throw new Error('x32_local_address_required_for_explicit_binding');
+    }
+    await registerX32({
+      targetAddress: configuredTarget,
+      localAddress,
+      persist: false
+    });
+  } else {
+    const persisted = (await providerConfigStore.list()).find(
+      item => item.kind === 'x32'
+    );
+    if (persisted) {
+      const interfaces = await inspectNetwork();
+      const plan = buildGuidedNetworkPlan(
+        interfaces,
+        persisted.targetAddress
+      );
+      const audioInterface = interfaces.find(
+        item => item.id === plan.audioInterfaceId
+      );
+      const localAddress = audioInterface?.ipv4[0];
+
+      if (plan.readyForReadOnlyProbe && localAddress) {
+        await registerX32({
+          targetAddress: persisted.targetAddress,
+          localAddress,
+          networkInterfaceId: audioInterface.id,
+          persist: true
+        }).catch(error => {
+          console.log(
+            JSON.stringify({
+              event: 'x32_recovery_waiting',
+              error: error instanceof Error ? error.message : 'unknown'
+            })
+          );
+        });
+      }
+    }
+  }
+
+  if (
+    runtime.listProviders().length === 0 &&
+    process.env.NESTLIVE_SIMULATOR === '1'
+  ) {
     const id = 'sim-primary';
     runtime.register(new SimulatedAudioConsoleProvider(id));
-    providerIds.push(id);
+    providerIds.add(id);
+    await runtime.startMeters(id, 40);
   }
 
   const authenticate = (token: string) => tokenStore.authenticate(token);
@@ -68,7 +179,50 @@ async function main(): Promise<void> {
     port: HTTP_PORT,
     runtime,
     authenticate,
-    pairing
+    pairing,
+    inspectNetwork: async () => {
+      const interfaces = await inspectNetwork();
+      return {
+        interfaces,
+        plan: buildPreDiscoveryNetworkPlan(interfaces)
+      };
+    },
+    discoverX32: async () => {
+      const interfaces = await inspectNetwork();
+      const plan = buildPreDiscoveryNetworkPlan(interfaces);
+      if (!plan.readyForReadOnlyProbe || !plan.audioInterfaceId) {
+        throw new Error('audio_interface_not_ready');
+      }
+      const audioInterface = interfaces.find(
+        item => item.id === plan.audioInterfaceId
+      );
+      const localAddress = audioInterface?.ipv4[0];
+      const cidr = audioInterface?.subnet.find(value => value.includes('.'));
+      if (!audioInterface || !localAddress || !cidr) {
+        throw new Error('audio_interface_ipv4_missing');
+      }
+      return discoverX32OnSubnet({ localAddress, cidr });
+    },
+    connectX32: async address => {
+      const interfaces = await inspectNetwork();
+      const plan = buildGuidedNetworkPlan(interfaces, address);
+      if (!plan.readyForReadOnlyProbe || !plan.audioInterfaceId) {
+        throw new Error('x32_target_not_reachable_by_audio_interface');
+      }
+      const audioInterface = interfaces.find(
+        item => item.id === plan.audioInterfaceId
+      );
+      const localAddress = audioInterface?.ipv4[0];
+      if (!audioInterface || !localAddress) {
+        throw new Error('audio_interface_ipv4_missing');
+      }
+      return registerX32({
+        targetAddress: address,
+        localAddress,
+        networkInterfaceId: audioInterface.id,
+        persist: true
+      });
+    }
   });
 
   const meters = new MeterWebSocketServer({
@@ -89,10 +243,6 @@ async function main(): Promise<void> {
 
   await api.start();
   await discovery.start();
-
-  for (const providerId of providerIds) {
-    await runtime.startMeters(providerId, 40);
-  }
 
   const pump = setInterval(() => {
     for (const providerId of providerIds) {

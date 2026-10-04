@@ -1,9 +1,11 @@
 import http from 'node:http';
 import type {
   AudioCommandEnvelope,
-  AudioConsoleProvider
+  AudioConsoleProvider,
+  NetworkInterface
 } from '@millionsnest/nestlive-domain';
 import type { PairingManager } from '../security/pairingManager';
+import type { GuidedNetworkPlan } from '../network/guidedPlan';
 import type { NestLiveAudioRuntime } from './audioRuntime';
 
 function json(
@@ -81,10 +83,7 @@ function applyCors(
     'access-control-allow-headers',
     'authorization,content-type,x-nestlive-confirmation'
   );
-  response.setHeader(
-    'access-control-allow-methods',
-    'GET,POST,OPTIONS'
-  );
+  response.setHeader('access-control-allow-methods', 'GET,POST,OPTIONS');
 
   if (
     trusted &&
@@ -94,6 +93,14 @@ function applyCors(
   }
 }
 
+export interface X32DiscoveryResult {
+  address: string;
+  networkName?: string;
+  model?: string;
+  firmware?: string;
+  latencyMs: number;
+}
+
 export interface AudioApiServerOptions {
   host?: string;
   port: number;
@@ -101,6 +108,15 @@ export interface AudioApiServerOptions {
   authenticate: (token: string) => boolean | Promise<boolean>;
   pairing?: PairingManager;
   allowedOrigins?: ReadonlySet<string>;
+  inspectNetwork?: () => Promise<{
+    interfaces: NetworkInterface[];
+    plan: GuidedNetworkPlan;
+  }>;
+  discoverX32?: () => Promise<X32DiscoveryResult[]>;
+  connectX32?: (address: string) => Promise<{
+    providerInstanceId: string;
+    state: unknown;
+  }>;
 }
 
 export class AudioApiServer {
@@ -194,6 +210,40 @@ export class AudioApiServer {
         request.headers.authorization?.replace(/^Bearer\s+/i, '') ?? '';
       if (!(await this.options.authenticate(auth))) {
         json(response, 401, { error: 'unauthorized' });
+        return;
+      }
+
+      if (
+        request.method === 'GET' &&
+        url.pathname === '/v1/network/plan' &&
+        this.options.inspectNetwork
+      ) {
+        json(response, 200, await this.options.inspectNetwork());
+        return;
+      }
+
+      if (
+        request.method === 'POST' &&
+        url.pathname === '/v1/audio/discover/x32' &&
+        this.options.discoverX32
+      ) {
+        json(response, 200, {
+          consoles: await this.options.discoverX32()
+        });
+        return;
+      }
+
+      if (
+        request.method === 'POST' &&
+        url.pathname === '/v1/audio/connect/x32' &&
+        this.options.connectX32
+      ) {
+        const body = (await readJson(request, 16 * 1024)) as {
+          address?: string;
+        };
+        const address = String(body.address ?? '').trim();
+        if (!address) throw new Error('x32_address_required');
+        json(response, 200, await this.options.connectX32(address));
         return;
       }
 
