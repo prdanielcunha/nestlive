@@ -1,5 +1,6 @@
 import { hostname, networkInterfaces, platform } from 'node:os';
 import path from 'node:path';
+import { existsSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { SimulatedAudioConsoleProvider } from '@millionsnest/nestlive-adapter-audio-sim';
 import {
@@ -35,6 +36,30 @@ const DISPLAY_NAME =
   process.env.NESTLIVE_NODE_NAME ||
   `NestLive · ${hostname()}`;
 const VERSION = '0.1.0';
+
+function firstExisting(candidates: string[]): string | undefined {
+  return candidates.find(candidate =>
+    existsSync(path.join(candidate, 'index.html'))
+  );
+}
+
+const WEB_ROOT =
+  process.env.NESTLIVE_WEB_ROOT?.trim() ||
+  firstExisting([
+    path.join(path.dirname(process.execPath), 'web'),
+    path.resolve(process.cwd(), 'web'),
+    path.resolve(process.cwd(), '../../apps/live/dist'),
+    path.resolve(process.cwd(), 'apps/live/dist')
+  ]);
+
+const PRODUCTION_WEB_ROOT =
+  process.env.NESTLIVE_PRODUCTION_WEB_ROOT?.trim() ||
+  firstExisting([
+    path.join(path.dirname(process.execPath), 'web-production'),
+    path.resolve(process.cwd(), 'web-production'),
+    path.resolve(process.cwd(), '../../apps/production/dist'),
+    path.resolve(process.cwd(), 'apps/production/dist')
+  ]);
 
 async function main(): Promise<void> {
   const tokenStore = new AccessTokenStore(
@@ -244,6 +269,8 @@ async function main(): Promise<void> {
         persist: true
       });
     },
+    webRoot: WEB_ROOT,
+    productionWebRoot: PRODUCTION_WEB_ROOT,
     localConsoleHtml: async () => {
       const interfaces = await inspectNetwork();
       const plan = buildPreDiscoveryNetworkPlan(interfaces);

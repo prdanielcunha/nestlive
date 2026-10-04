@@ -18,3 +18,5 @@ export * from './audio/audioRuntime';
 export * from './audio/audioApi';
 
 export * from './production/productionProxy';
+
+export * from './runtime/staticWeb';

@@ -13,6 +13,7 @@ import {
   proxyToProductionEngine,
   type ProductionProxyConfig
 } from '../production/productionProxy';
+import { serveStaticWeb } from '../runtime/staticWeb';
 
 function json(
   response: http.ServerResponse,
@@ -129,6 +130,8 @@ export interface AudioApiServerOptions {
     state: unknown;
   }>;
   localConsoleHtml?: () => Promise<string>;
+  webRoot?: string;
+  productionWebRoot?: string;
   productionProxy?: ProductionProxyConfig;
 }
 
@@ -180,7 +183,7 @@ export class AudioApiServer {
 
       if (
         request.method === 'GET' &&
-        (url.pathname === '/' || url.pathname === '/local') &&
+        url.pathname === '/local' &&
         this.options.localConsoleHtml
       ) {
         const remoteAddress = request.socket.remoteAddress ?? '';
@@ -202,6 +205,32 @@ export class AudioApiServer {
           "default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; frame-ancestors 'none'"
         );
         response.end(await this.options.localConsoleHtml());
+        return;
+      }
+
+      if (
+        this.options.productionWebRoot &&
+        await serveStaticWeb({
+          request,
+          response,
+          root: this.options.productionWebRoot,
+          prefix: '/production',
+          spaFallback: true
+        })
+      ) {
+        return;
+      }
+
+      if (
+        this.options.webRoot &&
+        await serveStaticWeb({
+          request,
+          response,
+          root: this.options.webRoot,
+          prefix: '/',
+          spaFallback: true
+        })
+      ) {
         return;
       }
 

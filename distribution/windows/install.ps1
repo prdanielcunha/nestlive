@@ -4,6 +4,7 @@ $ErrorActionPreference = "Stop"
 $SourceDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $InstallDir = Join-Path $env:LOCALAPPDATA "NestLive"
 $WebDir = Join-Path $InstallDir "web"
+$ProductionWebDir = Join-Path $InstallDir "web-production"
 $LogDir = Join-Path $InstallDir "logs"
 $InstallLog = Join-Path $LogDir "install.log"
 $ServiceExe = Join-Path $InstallDir "NestLiveService.exe"
@@ -18,6 +19,7 @@ function Log([string]$Message) {
 try {
   New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
   New-Item -ItemType Directory -Force -Path $WebDir | Out-Null
+  New-Item -ItemType Directory -Force -Path $ProductionWebDir | Out-Null
   Set-Content -Path $InstallLog -Value "NestLive installer" -Encoding UTF8
 
   @("NestLiveService","NestLiveAudioNode","NestLiveProductionNode","MusicScaleLiveNode","MillionsNestLiveNode") |
@@ -33,11 +35,17 @@ try {
   }
 
   $SourceWeb = Join-Path $SourceDir "web"
+  $SourceProductionWeb = Join-Path $SourceDir "web-production"
   if (-not (Test-Path (Join-Path $SourceWeb "index.html"))) {
     throw "A interface web do NestLive nao foi encontrada."
   }
+  if (-not (Test-Path (Join-Path $SourceProductionWeb "index.html"))) {
+    throw "A interface de producao do NestLive nao foi encontrada."
+  }
   Remove-Item (Join-Path $WebDir "*") -Recurse -Force -ErrorAction SilentlyContinue
+  Remove-Item (Join-Path $ProductionWebDir "*") -Recurse -Force -ErrorAction SilentlyContinue
   Copy-Item (Join-Path $SourceWeb "*") $WebDir -Recurse -Force
+  Copy-Item (Join-Path $SourceProductionWeb "*") $ProductionWebDir -Recurse -Force
 
   $RunKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
   New-Item -Path $RunKey -Force | Out-Null

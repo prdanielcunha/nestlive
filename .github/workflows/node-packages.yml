@@ -66,10 +66,12 @@ jobs:
           $out = Join-Path $env:RUNNER_TEMP "nestlive"
           New-Item -ItemType Directory -Force -Path $out | Out-Null
           New-Item -ItemType Directory -Force -Path (Join-Path $out "web") | Out-Null
+          New-Item -ItemType Directory -Force -Path (Join-Path $out "web-production") | Out-Null
           Copy-Item "packages/nestlive-service/dist/NestLiveService.exe" $out
           Copy-Item "packages/nestlive-node/dist/NestLiveAudioNode.exe" $out
           Copy-Item "packages/production-node/dist/NestLiveProductionNode.exe" $out
           Copy-Item "apps/live/dist/*" (Join-Path $out "web") -Recurse -Force
+          Copy-Item "apps/production/dist/*" (Join-Path $out "web-production") -Recurse -Force
           Copy-Item "distribution/windows/install.ps1" $out
           Copy-Item "distribution/windows/uninstall.ps1" $out
           Copy-Item "distribution/windows/INSTALAR-NESTLIVE.cmd" $out
@@ -91,12 +93,13 @@ jobs:
         run: |
           set -euo pipefail
           out="$RUNNER_TEMP/nestlive"
-          mkdir -p "$out/web"
+          mkdir -p "$out/web" "$out/web-production"
           cp packages/nestlive-service/dist/NestLiveService "$out/"
           cp packages/nestlive-node/dist/NestLiveAudioNode "$out/"
           cp packages/production-node/dist/NestLiveProductionNode "$out/"
           chmod +x "$out"/NestLive*
           cp -R apps/live/dist/. "$out/web/"
+          cp -R apps/production/dist/. "$out/web-production/"
           cp distribution/README-INSTALL.md "$out/"
           if [[ "$RUNNER_OS" == "macOS" ]]; then
             cp distribution/macos/install.command "$out/"

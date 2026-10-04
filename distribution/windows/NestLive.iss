@@ -37,6 +37,7 @@ Source: "{#SourceDir}\NestLiveService.exe"; DestDir: "{app}"; Flags: ignoreversi
 Source: "{#SourceDir}\NestLiveAudioNode.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceDir}\NestLiveProductionNode.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceDir}\web\*"; DestDir: "{app}\web"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#SourceDir}\web-production\*"; DestDir: "{app}\web-production"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "{#SourceDir}\README-INSTALL.md"; DestDir: "{app}"; Flags: ignoreversion
 
 [Registry]
