@@ -66,7 +66,10 @@ main{width:min(920px,100%);display:grid;grid-template-columns:1fr 320px;gap:18px
 <span class="eyebrow">NESTLIVE NODE</span>
 <h1>${escapeHtml(input.displayName)}</h1>
 <p class="muted">Este computador faz a ponte segura entre o NestLive e os equipamentos da igreja. A mesa nunca é exposta diretamente à internet.</p>
-<div>${providers}</div>\n${\n  input.soundcraftSpikeUrl\n    ? `<p><a class="tech-link" href="${escapeHtml(input.soundcraftSpikeUrl)}">Ferramenta técnica · Soundcraft Physical Spike</a></p>`\n    : ''\n}
+<div>${providers}</div>
+${input.soundcraftSpikeUrl
+  ? `<p><a class="tech-link" href="${escapeHtml(input.soundcraftSpikeUrl)}">Ferramenta técnica · Soundcraft Physical Spike</a></p>`
+  : ''}
 ${
   input.pairUrl
     ? `<div class="qr">${qr}</div><p class="muted">Escaneie com o celular ou iPad para abrir o NestLive.</p><p class="url">${escapeHtml(input.pairUrl)}</p>`
