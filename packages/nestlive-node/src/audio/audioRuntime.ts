@@ -4,7 +4,9 @@ import {
   type AudioCommandEnvelope,
   type AudioCommandExecution,
   type AudioConsoleProvider,
-  type AudioSafetyLevel
+  type AudioSafetyLevel,
+  type AudioStatePatch,
+  type MeterFrame
 } from '@millionsnest/nestlive-domain';
 import { LatestMeterFrameBuffer } from './meterPriority';
 
@@ -12,11 +14,16 @@ function safetyRank(level: AudioSafetyLevel): number {
   return level === 'normal' ? 0 : level === 'guarded' ? 1 : 2;
 }
 
+type StateListener = (patch: AudioStatePatch) => void;
+
 export class NestLiveAudioRuntime {
   private readonly providers = new Map<string, AudioConsoleProvider>();
   private readonly meterBuffers = new Map<string, LatestMeterFrameBuffer>();
-  private readonly latestMeters = new Map<string, import('@millionsnest/nestlive-domain').MeterFrame>();
+  private readonly latestMeters = new Map<string, MeterFrame>();
   private readonly meterAbort = new Map<string, AbortController>();
+  private readonly stateAbort = new Map<string, AbortController>();
+  private readonly stateListeners = new Map<string, Set<StateListener>>();
+  private readonly latestState = new Map<string, AudioStatePatch>();
 
   register(provider: AudioConsoleProvider): void {
     if (this.providers.has(provider.providerInstanceId)) {
@@ -27,6 +34,7 @@ export class NestLiveAudioRuntime {
       provider.providerInstanceId,
       new LatestMeterFrameBuffer()
     );
+    this.stateListeners.set(provider.providerInstanceId, new Set());
   }
 
   hasProvider(providerInstanceId: string): boolean {
@@ -37,10 +45,13 @@ export class NestLiveAudioRuntime {
     const provider = this.providers.get(providerInstanceId);
     if (!provider) return false;
     this.stopMeters(providerInstanceId);
+    this.stopState(providerInstanceId);
     await provider.dispose?.();
     this.providers.delete(providerInstanceId);
     this.meterBuffers.delete(providerInstanceId);
     this.latestMeters.delete(providerInstanceId);
+    this.latestState.delete(providerInstanceId);
+    this.stateListeners.delete(providerInstanceId);
     return true;
   }
 
@@ -58,6 +69,21 @@ export class NestLiveAudioRuntime {
       providerInstanceId: provider.providerInstanceId,
       capabilities: [...provider.capabilities()]
     }));
+  }
+
+  async startTelemetry(
+    providerInstanceId: string,
+    intervalMs = 40
+  ): Promise<void> {
+    const provider = this.getProvider(providerInstanceId);
+
+    if (provider.subscribeMeters) {
+      await this.startMeters(providerInstanceId, intervalMs);
+    }
+
+    if (provider.subscribeState) {
+      await this.startState(providerInstanceId, Math.max(50, intervalMs));
+    }
   }
 
   async startMeters(
@@ -87,7 +113,48 @@ export class NestLiveAudioRuntime {
         }
       } catch {
         if (!abort.signal.aborted) {
-          // Health surfaces read provider state; telemetry failure must not crash Node.
+          // Provider health and stale meters expose failure without crashing Node.
+        }
+      }
+    })();
+  }
+
+  async startState(
+    providerInstanceId: string,
+    intervalMs = 100
+  ): Promise<void> {
+    const provider = this.getProvider(providerInstanceId);
+    const subscribeState = provider.subscribeState?.bind(provider);
+    if (!subscribeState) {
+      throw new Error('audio_state_subscription_not_supported');
+    }
+
+    this.stopState(providerInstanceId);
+    const abort = new AbortController();
+    this.stateAbort.set(providerInstanceId, abort);
+
+    void (async () => {
+      try {
+        for await (const patch of subscribeState({
+          intervalMs,
+          signal: abort.signal
+        })) {
+          this.latestState.set(providerInstanceId, patch);
+          const listeners = this.stateListeners.get(providerInstanceId);
+          if (listeners) {
+            for (const listener of listeners) {
+              try {
+                listener(patch);
+              } catch {
+                // One UI subscriber never interrupts provider reconciliation.
+              }
+            }
+          }
+          if (abort.signal.aborted) break;
+        }
+      } catch {
+        if (!abort.signal.aborted) {
+          // Reconciliation failures remain isolated from command execution.
         }
       }
     })();
@@ -98,12 +165,36 @@ export class NestLiveAudioRuntime {
     this.meterAbort.delete(providerInstanceId);
   }
 
+  stopState(providerInstanceId: string): void {
+    this.stateAbort.get(providerInstanceId)?.abort();
+    this.stateAbort.delete(providerInstanceId);
+  }
+
   takeLatestMeter(providerInstanceId: string) {
     return this.meterBuffers.get(providerInstanceId)?.takeLatest();
   }
 
   latestMeter(providerInstanceId: string) {
     return this.latestMeters.get(providerInstanceId);
+  }
+
+  latestStatePatch(providerInstanceId: string) {
+    return this.latestState.get(providerInstanceId);
+  }
+
+  subscribeStateEvents(
+    providerInstanceId: string,
+    listener: StateListener
+  ): () => void {
+    this.getProvider(providerInstanceId);
+    const listeners =
+      this.stateListeners.get(providerInstanceId) ?? new Set<StateListener>();
+    listeners.add(listener);
+    this.stateListeners.set(providerInstanceId, listeners);
+
+    return () => {
+      listeners.delete(listener);
+    };
   }
 
   async execute(
@@ -196,6 +287,9 @@ export class NestLiveAudioRuntime {
     for (const providerId of [...this.meterAbort.keys()]) {
       this.stopMeters(providerId);
     }
+    for (const providerId of [...this.stateAbort.keys()]) {
+      this.stopState(providerId);
+    }
     await Promise.all(
       [...this.providers.values()].map(provider =>
         provider.dispose?.()
@@ -204,5 +298,7 @@ export class NestLiveAudioRuntime {
     this.providers.clear();
     this.meterBuffers.clear();
     this.latestMeters.clear();
+    this.latestState.clear();
+    this.stateListeners.clear();
   }
 }

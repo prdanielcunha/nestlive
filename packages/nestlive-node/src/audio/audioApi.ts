@@ -423,6 +423,63 @@ export class AudioApiServer {
         return;
       }
 
+      const stateStreamMatch =
+        /^\/v1\/audio\/providers\/([^/]+)\/state\/stream$/.exec(
+          url.pathname
+        );
+      if (request.method === 'GET' && stateStreamMatch) {
+        const providerInstanceId = decodeURIComponent(
+          stateStreamMatch[1]!
+        );
+        this.options.runtime.getProvider(providerInstanceId);
+
+        response.statusCode = 200;
+        response.setHeader(
+          'content-type',
+          'application/x-ndjson; charset=utf-8'
+        );
+        response.setHeader('cache-control', 'no-store');
+        response.setHeader('connection', 'keep-alive');
+        response.flushHeaders();
+
+        const initial =
+          this.options.runtime.latestStatePatch(providerInstanceId);
+        if (initial) {
+          response.write(
+            JSON.stringify({
+              type: 'audio.state.patch',
+              patch: initial
+            }) + '\n'
+          );
+        }
+
+        const unsubscribe =
+          this.options.runtime.subscribeStateEvents(
+            providerInstanceId,
+            patch => {
+              if (response.writableEnded) return;
+              if (response.writableLength > 256 * 1024) {
+                response.destroy(
+                  new Error('audio_state_stream_backpressure')
+                );
+                return;
+              }
+              response.write(
+                JSON.stringify({
+                  type: 'audio.state.patch',
+                  patch
+                }) + '\n'
+              );
+            }
+          );
+
+        request.on('close', () => {
+          unsubscribe();
+          if (!response.writableEnded) response.end();
+        });
+        return;
+      }
+
       const meterStreamMatch =
         /^\/v1\/audio\/providers\/([^/]+)\/meters\/stream$/.exec(
           url.pathname

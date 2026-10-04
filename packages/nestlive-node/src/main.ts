@@ -129,7 +129,7 @@ async function main(): Promise<void> {
 
     runtime.register(provider);
     providerIds.add(id);
-    await runtime.startMeters(id, 40);
+    await runtime.startTelemetry(id, 40);
 
     if (input.persist) {
       await providerConfigStore.save({
@@ -200,7 +200,7 @@ async function main(): Promise<void> {
     const id = 'sim-primary';
     runtime.register(new SimulatedAudioConsoleProvider(id));
     providerIds.add(id);
-    await runtime.startMeters(id, 40);
+    await runtime.startTelemetry(id, 40);
   }
 
   const authenticate = (token: string) => tokenStore.authenticate(token);

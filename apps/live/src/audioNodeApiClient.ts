@@ -4,6 +4,7 @@ import type {
   AudioCommandExecution,
   AudioControlCommand,
   AudioSafetyLevel,
+  AudioStatePatch,
   MeterFrame,
   NetworkInterface
 } from '@millionsnest/nestlive-domain';
@@ -264,6 +265,88 @@ export class NestLiveAudioApiClient {
             error.name === 'AbortError')
         ) {
           input.onStatus?.('offline');
+        }
+      }
+    })();
+
+    return () => controller.abort();
+  }
+
+  streamState(
+    providerInstanceId: string,
+    input: {
+      onPatch: (patch: AudioStatePatch) => void;
+      onError?: (error: string) => void;
+    }
+  ): () => void {
+    const controller = new AbortController();
+    const url = new URL(
+      `/v1/audio/providers/${encodeURIComponent(
+        providerInstanceId
+      )}/state/stream`,
+      this.httpBaseUrl
+    );
+
+    void (async () => {
+      try {
+        const response = await fetch(url, {
+          cache: 'no-store',
+          signal: controller.signal,
+          headers: {
+            authorization: `Bearer ${this.connection.token}`
+          },
+          targetAddressSpace: targetAddressSpace(url)
+        } as RequestInit & {
+          targetAddressSpace?: 'local' | 'loopback';
+        });
+
+        if (!response.ok || !response.body) {
+          throw new Error(`state_stream_http_${response.status}`);
+        }
+
+        const reader = response.body
+          .pipeThrough(new TextDecoderStream())
+          .getReader();
+        let buffer = '';
+
+        while (!controller.signal.aborted) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += value;
+
+          let newline = buffer.indexOf('\n');
+          while (newline >= 0) {
+            const line = buffer.slice(0, newline).trim();
+            buffer = buffer.slice(newline + 1);
+            if (line) {
+              try {
+                const parsed = JSON.parse(line) as {
+                  type?: string;
+                  patch?: AudioStatePatch;
+                };
+                if (
+                  parsed.type === 'audio.state.patch' &&
+                  parsed.patch
+                ) {
+                  input.onPatch(parsed.patch);
+                }
+              } catch {
+                // A malformed patch is isolated from the live UI.
+              }
+            }
+            newline = buffer.indexOf('\n');
+          }
+        }
+      } catch (error) {
+        if (
+          !(error instanceof DOMException &&
+            error.name === 'AbortError')
+        ) {
+          input.onError?.(
+            error instanceof Error
+              ? error.message
+              : 'state_stream_failed'
+          );
         }
       }
     })();

@@ -39,6 +39,7 @@ export function useNestLiveAudio(
 
     let alive = true;
     let disconnectMeter: (() => void) | undefined;
+    let disconnectState: (() => void) | undefined;
     setStatus('connecting');
     setError(undefined);
 
@@ -81,6 +82,38 @@ export function useNestLiveAudio(
             }
           }
         );
+
+        disconnectState = api.streamState(
+          selected.providerInstanceId,
+          {
+            onPatch: patch => {
+              if (!alive) return;
+
+              if (
+                patch.scope === 'channel' &&
+                patch.targetId
+              ) {
+                setChannels(current =>
+                  current.map(channel =>
+                    channel.id === patch.targetId
+                      ? { ...channel, ...patch.patch }
+                      : channel
+                  )
+                );
+                return;
+              }
+
+              if (
+                patch.scope === 'console' &&
+                Array.isArray(patch.patch.channels)
+              ) {
+                setChannels(
+                  patch.patch.channels as AudioChannel[]
+                );
+              }
+            }
+          }
+        );
       } catch (cause) {
         if (!alive) return;
         setStatus('error');
@@ -93,6 +126,7 @@ export function useNestLiveAudio(
     return () => {
       alive = false;
       disconnectMeter?.();
+      disconnectState?.();
     };
   }, [api, connection, refreshKey]);
 
