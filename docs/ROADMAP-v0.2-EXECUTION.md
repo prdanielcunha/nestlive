@@ -2,56 +2,89 @@
 
 **Início:** 04/10/2026
 
-| Fase | Estado | Situação |
+| Fase | Estado de software | Certificação física |
 |---|---|---|
-| A0 — contratos de áudio e multi-rede | **implementado em fundação** | contratos, safety, meters e simulador |
-| A1 — Multi-network Node | **iniciado** | enumeração, subnet conflict, candidatos e binding explícito |
-| A2 — Meter Engine | **iniciado** | smoothing, peak hold, clip e stale detection |
-| A3 — X32 | próxima | provider real + teste físico |
-| A4 — Mix UI premium | planejada | desktop/tablet/mobile |
-| A5 — Soundcraft physical spike | depende de hardware | capabilities reais |
-| A6 — Soundcraft production provider | bloqueada por A5 | — |
-| A7 — Signal Trace + Audio Doctor | planejada | — |
-| A8 — Soundcheck + contexto da escala | planejada | — |
-| A9 — Remote Mix | planejada | — |
+| A0 — contratos de áudio e multi-rede | **implementado** | n/a |
+| A1 — Multi-network Node | **fundação implementada** | pendente nos PCs reais |
+| A2 — Meter Engine | **fundação implementada** | pendente stress/hardware |
+| A3 — X32 | **provider OSC implementado** | pendente Monte Castelo |
+| A4 — Mix UI premium | em implementação | — |
+| A5 — Soundcraft physical spike | harness a implementar | pendente Industrial |
+| A6 — Soundcraft production provider | bloqueado por A5 | pendente |
+| A7 — Signal Trace + Audio Doctor | **núcleo determinístico implementado** | validar com telemetria real |
+| A8 — Soundcheck + Scale Context | **modelo de Soundcheck implementado** | integração UI/escala pendente |
+| A9 — Remote Mix | **policy/adaptive meters implementados** | relay/auth final pendente |
 
-## A0 — gate técnico
+## A0
 
-A fundação agora possui:
+Entregue:
 
-- domínio neutro, sem marca;
-- capability set de áudio;
-- safety por capability;
+- domínio neutro;
+- capability set;
+- safety;
 - `MeterFrame`;
 - `NetworkInterface`;
 - `ProviderNetworkBinding`;
-- console simulada com meters e state patches;
-- testes de contrato.
+- simulador;
+- testes.
 
-A0 ainda precisa passar no CI da branch antes de ser marcado como fechado.
+## A1
 
-## A1 — o que já existe
+Entregue em software:
 
-- enumeração das interfaces do sistema operacional;
-- classificação Ethernet / Wi‑Fi / USB Wi‑Fi / virtual;
-- cálculo de alcance por subnet;
-- detecção inicial de conflito entre sub-redes;
-- seleção de candidatos para alcançar a mesa;
-- criação de binding explícito sem mudar rede do Windows.
+- enumeração de interfaces;
+- classificação Ethernet / Wi-Fi / USB Wi-Fi / virtual;
+- subnet reachability;
+- detecção de subnet conflict;
+- binding explícito;
+- persistência atômica de bindings;
+- health classification;
+- recuperação segura quando adaptador some.
 
-Ainda faltam: gateways/metric, health ativo, persistência após reboot, detecção de troca de adaptador e wizard.
+Não há código que habilite bridge, ICS ou NAT.
 
-## A2 — o que já existe
+Pendente para certificação: descobrir gateway/metric de forma específica por OS, medir perda/latência real e executar o Guided Setup nos PCs Industrial/Monte Castelo.
 
-- attack/release visual;
-- peak hold;
-- peak decay;
+## A2
+
+Entregue:
+
+- smoothing attack/release;
+- peak hold/decay;
 - clip;
+- stale detection;
 - semantic meter state;
-- stale detection separada de “sem sinal”.
+- WebSocket LAN autenticado;
+- rate gate;
+- backpressure “latest frame wins” para nunca bloquear comandos.
 
-Ainda faltam: WebSocket LAN, backpressure/rate limiting, prioridade de comandos e stress test com muitos canais.
+Pendente: stress test real com console e browser/tablet.
 
-## Regra de migração
+## A3
 
-O código comprovado do repositório anterior será portado seletivamente. Firebase/hosting, certificados, releases e certificações antigas não serão herdados automaticamente pelo NestLive.
+Implementado:
+
+- OSC codec;
+- UDP 10023 com bind local;
+- `/xinfo`;
+- 32 canais;
+- buses;
+- DCA;
+- fader/mute/pan com confirmação observada;
+- subscriptions `/meters/1` e `/meters/2`;
+- conversão de meter linear para dBFS.
+
+Não anunciamos gain/phantom/EQ/dynamics/routing/scenes até implementar e certificar cada capability.
+
+## A7–A9
+
+Já existem núcleos de:
+
+- diagnóstico determinístico;
+- Signal Trace com evidência observada/inferida;
+- Soundcheck state + peak/clip history;
+- Remote Mix grants e taxa adaptativa de meters.
+
+## Regra
+
+Código pronto não equivale a hardware certificado. Gates físicos continuam obrigatórios e não serão marcados como concluídos artificialmente.
