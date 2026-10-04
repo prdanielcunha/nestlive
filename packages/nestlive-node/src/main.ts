@@ -176,11 +176,23 @@ async function main(): Promise<void> {
 
   const authenticate = (token: string) => tokenStore.authenticate(token);
 
+  const productionBaseUrl =
+    process.env.NESTLIVE_PRODUCTION_BASE_URL?.trim();
+  const productionToken =
+    process.env.NESTLIVE_PRODUCTION_INTERNAL_TOKEN?.trim();
+
   const api = new AudioApiServer({
     port: HTTP_PORT,
     runtime,
     authenticate,
     pairing,
+    productionProxy:
+      productionBaseUrl && productionToken
+        ? {
+            baseUrl: productionBaseUrl,
+            token: productionToken
+          }
+        : undefined,
     inspectNetwork: async () => {
       const interfaces = await inspectNetwork();
       return {

@@ -16,3 +16,5 @@ export * from './audio/meterSocket';
 export * from './audio/meterPriority';
 export * from './audio/audioRuntime';
 export * from './audio/audioApi';
+
+export * from './production/productionProxy';

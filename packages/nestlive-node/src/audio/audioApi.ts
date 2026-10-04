@@ -7,6 +7,10 @@ import type {
 import type { PairingManager } from '../security/pairingManager';
 import type { GuidedNetworkPlan } from '../network/guidedPlan';
 import type { NestLiveAudioRuntime } from './audioRuntime';
+import {
+  proxyToProductionEngine,
+  type ProductionProxyConfig
+} from '../production/productionProxy';
 
 function json(
   response: http.ServerResponse,
@@ -118,6 +122,7 @@ export interface AudioApiServerOptions {
     state: unknown;
   }>;
   localConsoleHtml?: () => Promise<string>;
+  productionProxy?: ProductionProxyConfig;
 }
 
 export class AudioApiServer {
@@ -238,6 +243,19 @@ export class AudioApiServer {
         request.headers.authorization?.replace(/^Bearer\s+/i, '') ?? '';
       if (!(await this.options.authenticate(auth))) {
         json(response, 401, { error: 'unauthorized' });
+        return;
+      }
+
+      if (
+        this.options.productionProxy &&
+        (url.pathname === '/v1/production' ||
+          url.pathname.startsWith('/v1/production/'))
+      ) {
+        await proxyToProductionEngine(
+          request,
+          response,
+          this.options.productionProxy
+        );
         return;
       }
 
