@@ -14,6 +14,7 @@ import {
   type ProductionProxyConfig
 } from '../production/productionProxy';
 import { serveStaticWeb } from '../runtime/staticWeb';
+import type { SoundcraftSpikeCoordinator } from '../soundcraft/soundcraftSpikeCoordinator';
 
 function json(
   response: http.ServerResponse,
@@ -133,6 +134,8 @@ export interface AudioApiServerOptions {
   webRoot?: string;
   productionWebRoot?: string;
   productionProxy?: ProductionProxyConfig;
+  soundcraftSpike?: SoundcraftSpikeCoordinator;
+  soundcraftSpikeHtml?: () => string;
 }
 
 export class AudioApiServer {
@@ -181,17 +184,107 @@ export class AudioApiServer {
         `http://${request.headers.host ?? 'localhost'}`
       );
 
+      const remoteAddress = request.socket.remoteAddress ?? '';
+      const loopback =
+        remoteAddress === '127.0.0.1' ||
+        remoteAddress === '::1' ||
+        remoteAddress === '::ffff:127.0.0.1';
+
+      if (
+        url.pathname.startsWith('/local/soundcraft-spike') &&
+        (!this.options.soundcraftSpike || !loopback)
+      ) {
+        json(response, loopback ? 404 : 403, {
+          error: loopback ? 'soundcraft_spike_unavailable' : 'local_only'
+        });
+        return;
+      }
+
+      if (
+        request.method === 'GET' &&
+        url.pathname === '/local/soundcraft-spike' &&
+        this.options.soundcraftSpikeHtml
+      ) {
+        response.statusCode = 200;
+        response.setHeader('content-type', 'text/html; charset=utf-8');
+        response.setHeader('cache-control', 'no-store');
+        response.setHeader(
+          'content-security-policy',
+          "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'"
+        );
+        response.end(this.options.soundcraftSpikeHtml());
+        return;
+      }
+
+      if (
+        request.method === 'GET' &&
+        url.pathname === '/local/soundcraft-spike/status' &&
+        this.options.soundcraftSpike
+      ) {
+        json(response, 200, {
+          status: this.options.soundcraftSpike.status()
+        });
+        return;
+      }
+
+      if (
+        request.method === 'POST' &&
+        url.pathname === '/local/soundcraft-spike/start' &&
+        this.options.soundcraftSpike
+      ) {
+        const body = (await readJson(request, 16 * 1024)) as {
+          localAddress?: string;
+          firmware?: string;
+        };
+        json(response, 201, {
+          status: await this.options.soundcraftSpike.start({
+            localAddress:
+              String(body.localAddress ?? '').trim() || undefined,
+            firmware:
+              String(body.firmware ?? '').trim() || undefined
+          })
+        });
+        return;
+      }
+
+      if (
+        request.method === 'POST' &&
+        url.pathname === '/local/soundcraft-spike/mark' &&
+        this.options.soundcraftSpike
+      ) {
+        const body = (await readJson(request, 32 * 1024)) as {
+          action?: string;
+          expectedObservation?: string;
+          note?: string;
+        };
+        const marker = this.options.soundcraftSpike.mark({
+          action: String(body.action ?? ''),
+          expectedObservation:
+            String(body.expectedObservation ?? '').trim() || undefined,
+          note: String(body.note ?? '').trim() || undefined
+        });
+        json(response, 201, {
+          marker,
+          status: this.options.soundcraftSpike.status()
+        });
+        return;
+      }
+
+      if (
+        request.method === 'POST' &&
+        url.pathname === '/local/soundcraft-spike/stop' &&
+        this.options.soundcraftSpike
+      ) {
+        const stopped = await this.options.soundcraftSpike.stop();
+        json(response, 200, stopped);
+        return;
+      }
+
       if (
         request.method === 'GET' &&
         url.pathname === '/local' &&
         this.options.localConsoleHtml
       ) {
-        const remoteAddress = request.socket.remoteAddress ?? '';
-        const loopback =
-          remoteAddress === '127.0.0.1' ||
-          remoteAddress === '::1' ||
-          remoteAddress === '::ffff:127.0.0.1';
-
         if (!loopback) {
           json(response, 404, { error: 'not_found' });
           return;
