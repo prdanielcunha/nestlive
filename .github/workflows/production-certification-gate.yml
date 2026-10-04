@@ -1,0 +1,32 @@
+name: NestLive Production Certification Gate
+
+on:
+  pull_request:
+    branches: [production]
+    paths:
+      - "docs/certification/production-certification.json"
+      - "scripts/check-production-certification.mjs"
+      - "package.json"
+      - ".github/workflows/production-certification-gate.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nestlive-production-certification-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  certification:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Require real certification evidence
+        run: npm run check:production-certification
