@@ -20,3 +20,5 @@ export * from './audio/audioApi';
 export * from './production/productionProxy';
 
 export * from './runtime/staticWeb';
+export * from './soundcraft/soundcraftSpikeCoordinator';
+export * from './soundcraft/soundcraftSpikeConsole';
