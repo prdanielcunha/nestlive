@@ -88,14 +88,17 @@ import { toString as qrToString } from 'qrcode';
 
 function liveEnv(name: string): string | undefined {
   return (
+    process.env[`NESTLIVE_${name}`] ??
     process.env[`MUSICSCALE_LIVE_${name}`] ??
     process.env[`MILLIONSNEST_LIVE_${name}`]
   );
 }
 
-const PORT = Number(liveEnv('NODE_PORT') || 4317);
-const HOST = liveEnv('NODE_HOST') || '0.0.0.0';
-const VERSION = '0.1.0-beta.3';
+// The public/local NestLive gateway owns 4317. The production engine stays
+// loopback-only by default and is reached through the authenticated gateway.
+const PORT = Number(liveEnv('NODE_PORT') || 4337);
+const HOST = liveEnv('NODE_HOST') || '127.0.0.1';
+const VERSION = '0.1.0';
 const DEV_TOKEN = liveEnv('DEV_TOKEN') || '';
 const PAIRING_ENABLED = liveEnv('PAIRING_ENABLED') !== 'false';
 const HOLYRICS_TOKEN = liveEnv('HOLYRICS_TOKEN')?.trim() || '';
