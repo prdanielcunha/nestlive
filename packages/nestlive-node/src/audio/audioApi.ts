@@ -5,9 +5,11 @@ import type {
   NetworkInterface
 } from '@millionsnest/nestlive-domain';
 import type { PairingManager } from '../security/pairingManager';
+import type { AccessTokenRecord } from '../security/accessTokenStore';
 import type { GuidedNetworkPlan } from '../network/guidedPlan';
 import type { NestLiveAudioRuntime } from './audioRuntime';
 import {
+  fetchProductionEngineHealth,
   proxyToProductionEngine,
   type ProductionProxyConfig
 } from '../production/productionProxy';
@@ -110,6 +112,11 @@ export interface AudioApiServerOptions {
   port: number;
   runtime: NestLiveAudioRuntime;
   authenticate: (token: string) => boolean | Promise<boolean>;
+  authorize?: (
+    token: string
+  ) => AccessTokenRecord | undefined | Promise<AccessTokenRecord | undefined>;
+  revokeToken?: (token: string) => boolean | Promise<boolean>;
+  activePairingCount?: () => number | Promise<number>;
   pairing?: PairingManager;
   allowedOrigins?: ReadonlySet<string>;
   inspectNetwork?: () => Promise<{
@@ -199,10 +206,51 @@ export class AudioApiServer {
       }
 
       if (request.method === 'GET' && url.pathname === '/health') {
+        const productionHealth = this.options.productionProxy
+          ? await fetchProductionEngineHealth(
+              this.options.productionProxy
+            ).catch(() => undefined)
+          : undefined;
+        const audioProviders = this.options.runtime.listProviders();
+        const pairedDevices = this.options.activePairingCount
+          ? await this.options.activePairingCount()
+          : 0;
+
         json(response, 200, {
+          ...(productionHealth ?? {}),
           product: 'NestLive Node',
           status: 'online',
-          now: new Date().toISOString()
+          health:
+            productionHealth?.health === 'degraded'
+              ? 'degraded'
+              : 'online',
+          version:
+            typeof productionHealth?.version === 'string'
+              ? productionHealth.version
+              : '0.1.0',
+          nodeId:
+            typeof productionHealth?.nodeId === 'string'
+              ? productionHealth.nodeId
+              : 'nestlive-node',
+          hostname:
+            typeof productionHealth?.hostname === 'string'
+              ? productionHealth.hostname
+              : 'NestLive',
+          lanAddresses: Array.isArray(productionHealth?.lanAddresses)
+            ? productionHealth.lanAddresses
+            : [],
+          providers:
+            Number(productionHealth?.providers ?? 0) +
+            audioProviders.length,
+          providersOnline:
+            Number(productionHealth?.providersOnline ?? 0) +
+            audioProviders.length,
+          audioProviders: audioProviders.length,
+          now: new Date().toISOString(),
+          pairing: {
+            pairedDevices,
+            pairingEnabled: Boolean(this.options.pairing)
+          }
         });
         return;
       }
@@ -213,11 +261,21 @@ export class AudioApiServer {
         this.options.pairing
       ) {
         const body = (await readJson(request, 16 * 1024)) as {
+          deviceId?: string;
           deviceName?: string;
+          organizationId?: string;
+          venueId?: string;
+          liveSystemId?: string;
         };
-        const challenge = this.options.pairing.create(
-          String(body.deviceName ?? '')
-        );
+        const challenge = this.options.pairing.create({
+          deviceId: String(body.deviceId ?? '').trim() || undefined,
+          deviceName: String(body.deviceName ?? ''),
+          organizationId:
+            String(body.organizationId ?? '').trim() || undefined,
+          venueId: String(body.venueId ?? '').trim() || undefined,
+          liveSystemId:
+            String(body.liveSystemId ?? '').trim() || undefined
+        });
         json(response, 201, challenge);
         return;
       }
@@ -230,19 +288,70 @@ export class AudioApiServer {
         const body = (await readJson(request, 16 * 1024)) as {
           challengeId?: string;
           pin?: string;
+          deviceId?: string;
+          deviceName?: string;
         };
         const grant = await this.options.pairing.complete({
           challengeId: String(body.challengeId ?? ''),
-          pin: String(body.pin ?? '')
+          pin: String(body.pin ?? ''),
+          deviceId: String(body.deviceId ?? '').trim() || undefined,
+          deviceName:
+            String(body.deviceName ?? '').trim() || undefined
         });
         json(response, 200, grant);
         return;
       }
 
+      if (
+        request.method === 'POST' &&
+        url.pathname === '/collaboration/redeem' &&
+        this.options.productionProxy
+      ) {
+        await proxyToProductionEngine(request, response, {
+          ...this.options.productionProxy,
+          clientToken: '',
+          stripPrefix: false
+        });
+        return;
+      }
+
       const auth =
         request.headers.authorization?.replace(/^Bearer\s+/i, '') ?? '';
-      if (!(await this.options.authenticate(auth))) {
+      const authorizedRecord = this.options.authorize
+        ? await this.options.authorize(auth)
+        : undefined;
+      const gatewayAuthorized =
+        Boolean(authorizedRecord) ||
+        (await this.options.authenticate(auth));
+
+      if (
+        !gatewayAuthorized &&
+        this.options.productionProxy &&
+        auth &&
+        !url.pathname.startsWith('/v1/') &&
+        !url.pathname.startsWith('/local/') &&
+        !url.pathname.startsWith('/pairing/')
+      ) {
+        await proxyToProductionEngine(request, response, {
+          ...this.options.productionProxy,
+          clientToken: auth,
+          stripPrefix: false
+        });
+        return;
+      }
+
+      if (!gatewayAuthorized) {
         json(response, 401, { error: 'unauthorized' });
+        return;
+      }
+
+      if (
+        request.method === 'POST' &&
+        url.pathname === '/pairing/revoke' &&
+        this.options.revokeToken
+      ) {
+        await this.options.revokeToken(auth);
+        json(response, 200, { revoked: true });
         return;
       }
 
@@ -254,7 +363,10 @@ export class AudioApiServer {
         await proxyToProductionEngine(
           request,
           response,
-          this.options.productionProxy
+          {
+            ...this.options.productionProxy,
+            binding: authorizedRecord?.binding
+          }
         );
         return;
       }
@@ -367,6 +479,30 @@ export class AudioApiServer {
         const envelope = (await readJson(request)) as AudioCommandEnvelope;
         const execution = await this.options.runtime.execute(envelope);
         json(response, 200, execution);
+        return;
+      }
+
+      if (
+        this.options.productionProxy &&
+        !url.pathname.startsWith('/v1/') &&
+        !url.pathname.startsWith('/pairing/')
+      ) {
+        const remoteAddress = request.socket.remoteAddress ?? '';
+        const loopback =
+          remoteAddress === '127.0.0.1' ||
+          remoteAddress === '::1' ||
+          remoteAddress === '::ffff:127.0.0.1';
+
+        if (url.pathname.startsWith('/local/') && !loopback) {
+          json(response, 403, { error: 'local_only' });
+          return;
+        }
+
+        await proxyToProductionEngine(request, response, {
+          ...this.options.productionProxy,
+          binding: authorizedRecord?.binding,
+          stripPrefix: false
+        });
         return;
       }
 

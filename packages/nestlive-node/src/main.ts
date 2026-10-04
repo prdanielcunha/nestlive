@@ -1,6 +1,6 @@
 import { hostname, networkInterfaces, platform } from 'node:os';
 import path from 'node:path';
-import { randomBytes } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import { SimulatedAudioConsoleProvider } from '@millionsnest/nestlive-adapter-audio-sim';
 import {
   discoverX32OnSubnet,
@@ -27,7 +27,10 @@ const METER_PORT = Number(process.env.NESTLIVE_METER_PORT || 4319);
 const STATE_DIR = defaultNestLiveStateDir();
 const NODE_ID =
   process.env.NESTLIVE_NODE_ID ||
-  `node-${randomBytes(8).toString('hex')}`;
+  `node_${createHash('sha256')
+    .update(`${hostname()}|nestlive`)
+    .digest('hex')
+    .slice(0, 16)}`;
 const DISPLAY_NAME =
   process.env.NESTLIVE_NODE_NAME ||
   `NestLive · ${hostname()}`;
@@ -41,6 +44,7 @@ async function main(): Promise<void> {
     path.join(STATE_DIR, 'audio-providers.json')
   );
   const pairing = new PairingManager(tokenStore, {
+    nodeId: NODE_ID,
     onPin: value => {
       console.log(
         JSON.stringify({
@@ -175,6 +179,7 @@ async function main(): Promise<void> {
   }
 
   const authenticate = (token: string) => tokenStore.authenticate(token);
+  const authorize = (token: string) => tokenStore.authorize(token);
 
   const productionBaseUrl =
     process.env.NESTLIVE_PRODUCTION_BASE_URL?.trim();
@@ -185,6 +190,9 @@ async function main(): Promise<void> {
     port: HTTP_PORT,
     runtime,
     authenticate,
+    authorize,
+    revokeToken: token => tokenStore.revokeToken(token),
+    activePairingCount: () => tokenStore.activeCount(),
     pairing,
     productionProxy:
       productionBaseUrl && productionToken
