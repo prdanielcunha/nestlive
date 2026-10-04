@@ -3,12 +3,36 @@ import type {
   AudioCommandEnvelope,
   AudioCommandExecution,
   AudioControlCommand,
-  AudioSafetyLevel
+  AudioSafetyLevel,
+  NetworkInterface
 } from '@millionsnest/nestlive-domain';
 
 export interface AudioProviderSummary {
   providerInstanceId: string;
   capabilities: string[];
+}
+
+export interface GuidedNetworkCheck {
+  id: string;
+  label: string;
+  severity: 'ok' | 'attention' | 'blocked';
+  detail: string;
+  action?: string;
+}
+
+export interface GuidedNetworkPlan {
+  cloudInterfaceId?: string;
+  audioInterfaceId?: string;
+  checks: GuidedNetworkCheck[];
+  readyForReadOnlyProbe: boolean;
+}
+
+export interface X32DiscoveryResult {
+  address: string;
+  networkName?: string;
+  model?: string;
+  firmware?: string;
+  latencyMs: number;
 }
 
 export interface NestLiveNodeConnection {
@@ -62,9 +86,7 @@ export function normalizePrivateNodeUrl(input: string): string {
   return url.toString().replace(/\/$/, '');
 }
 
-function targetAddressSpace(
-  url: URL
-): 'local' | 'loopback' {
+function targetAddressSpace(url: URL): 'local' | 'loopback' {
   const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, '');
   return host === 'localhost' ||
     host === '::1' ||
@@ -137,6 +159,31 @@ export class NestLiveAudioApiClient {
 
     if (!response.ok) throw new Error('node_unreachable');
     return response.json();
+  }
+
+  async inspectNetwork(): Promise<{
+    interfaces: NetworkInterface[];
+    plan: GuidedNetworkPlan;
+  }> {
+    return this.request('/v1/network/plan');
+  }
+
+  async discoverX32(): Promise<X32DiscoveryResult[]> {
+    const body = await this.request<{ consoles: X32DiscoveryResult[] }>(
+      '/v1/audio/discover/x32',
+      { method: 'POST', body: '{}' }
+    );
+    return body.consoles;
+  }
+
+  async connectX32(address: string): Promise<{
+    providerInstanceId: string;
+    state: unknown;
+  }> {
+    return this.request('/v1/audio/connect/x32', {
+      method: 'POST',
+      body: JSON.stringify({ address })
+    });
   }
 
   async providers(): Promise<AudioProviderSummary[]> {

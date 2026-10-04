@@ -29,6 +29,7 @@ export function useNestLiveAudio(
   const [channels, setChannels] = useState<AudioChannel[]>([]);
   const [frame, setFrame] = useState<MeterFrame>();
   const [error, setError] = useState<string>();
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const api = useMemo(
     () => (connection ? new NestLiveAudioApiClient(connection) : undefined),
@@ -54,9 +55,14 @@ export function useNestLiveAudio(
               item.providerInstanceId === connection.providerInstanceId
           ) ?? providers[0];
 
-        if (!selected) throw new Error('no_audio_provider');
-        setProvider(selected);
+        if (!selected) {
+          setProvider(undefined);
+          setChannels([]);
+          setStatus('online');
+          return;
+        }
 
+        setProvider(selected);
         const nextChannels = await api.channels(selected.providerInstanceId);
         if (!alive) return;
         setChannels(nextChannels);
@@ -89,7 +95,11 @@ export function useNestLiveAudio(
       alive = false;
       disconnectMeter?.();
     };
-  }, [api, connection]);
+  }, [api, connection, refreshKey]);
+
+  const refresh = useCallback(() => {
+    setRefreshKey(value => value + 1);
+  }, []);
 
   const execute = useCallback(
     async (
@@ -129,6 +139,16 @@ export function useNestLiveAudio(
     channels,
     frame,
     error,
-    execute
+    execute,
+    refresh,
+    inspectNetwork: api ? () => api.inspectNetwork() : undefined,
+    discoverX32: api ? () => api.discoverX32() : undefined,
+    connectX32: api
+      ? async (address: string) => {
+          const result = await api.connectX32(address);
+          refresh();
+          return result;
+        }
+      : undefined
   };
 }

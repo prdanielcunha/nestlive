@@ -174,3 +174,14 @@ button { color: inherit; }
 .safety-confirm p { color:var(--muted); font-size:12px; line-height:1.5; }
 .safety-confirm>div { display:flex; gap:8px; }
 .status-dot[data-offline="true"] { background:var(--danger); box-shadow:0 0 0 5px rgba(232,90,104,.09); }
+
+.setup__checks { display:grid; gap:8px; margin:10px 0; }
+.setup-check { display:grid; grid-template-columns:150px 1fr; gap:8px 14px; align-items:start; padding:13px 16px; border-radius:14px; border:1px solid var(--border); background:rgba(255,255,255,.02); }
+.setup-check span,.setup-check small { color:var(--muted); font-size:12px; line-height:1.5; }
+.setup-check small { grid-column:2; }
+.setup-check[data-severity="ok"] strong { color:#a9dec4; }
+.setup-check[data-severity="attention"] strong { color:#f4c27c; }
+.setup-check[data-severity="blocked"] strong { color:#ff9eaa; }
+.setup__success { margin-top:12px; padding:14px 16px; border:1px solid rgba(46,182,125,.22); background:rgba(46,182,125,.07); border-radius:14px; color:#a9dec4; }
+.setup__error { margin-top:12px; padding:14px 16px; border:1px solid rgba(232,90,104,.22); background:rgba(232,90,104,.07); border-radius:14px; color:#ffb2bb; }
+.setup-step--blocked { opacity:.85; }

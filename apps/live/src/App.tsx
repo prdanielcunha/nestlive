@@ -205,7 +205,14 @@ export function App() {
             channelCount={channels.length}
           />
         ) : null}
-        {surface === 'setup' ? <GuidedSetup /> : null}
+        {surface === 'setup' ? (
+          <GuidedSetup
+            connectedToNode={Boolean(configuredNode) && audio.status !== 'error'}
+            inspectNetwork={audio.inspectNetwork}
+            discoverX32={audio.discoverX32}
+            connectX32={audio.connectX32}
+          />
+        ) : null}
       </main>
     </div>
   );
