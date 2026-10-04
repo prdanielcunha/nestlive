@@ -117,6 +117,52 @@ export interface AudioRoutingState {
   }>;
 }
 
+export interface AudioEqBandState {
+  index: 1 | 2 | 3 | 4;
+  type?: number;
+  frequencyHz: number;
+  gainDb: number;
+  q: number;
+}
+
+export interface AudioEqState {
+  on: boolean;
+  bands: AudioEqBandState[];
+}
+
+export interface AudioGateState {
+  on: boolean;
+  thresholdDb: number;
+  rangeDb: number;
+  attackMs: number;
+  holdMs: number;
+  releaseMs: number;
+}
+
+export interface AudioCompressorState {
+  on: boolean;
+  thresholdDb: number;
+  ratio: number;
+  knee: number;
+  makeupGainDb: number;
+  attackMs: number;
+  holdMs: number;
+  releaseMs: number;
+  mixPercent: number;
+  auto: boolean;
+}
+
+export interface AudioChannelProcessingState {
+  channelId: EntityId;
+  sourceIndex?: number;
+  headampIndex?: number;
+  gainDb?: number;
+  phantom?: boolean;
+  eq: AudioEqState;
+  gate: AudioGateState;
+  compressor: AudioCompressorState;
+}
+
 export interface AudioConsoleState {
   providerInstanceId: EntityId;
   model?: string;
@@ -173,6 +219,9 @@ export interface AudioConsoleProvider {
   getBuses(): Promise<AudioBus[]>;
   getGroups(): Promise<AudioGroup[]>;
   getRouting?(): Promise<AudioRoutingState>;
+  getChannelProcessing?(
+    channelId: EntityId
+  ): Promise<AudioChannelProcessingState>;
 
   subscribeState?(scope?: AudioSubscriptionScope): AsyncIterable<AudioStatePatch>;
   subscribeMeters?(scope?: AudioSubscriptionScope): AsyncIterable<MeterFrame>;
