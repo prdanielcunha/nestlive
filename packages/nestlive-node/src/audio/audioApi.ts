@@ -570,6 +570,27 @@ export class AudioApiServer {
         return;
       }
 
+      const processingMatch =
+        /^\/v1\/audio\/providers\/([^/]+)\/channels\/([^/]+)\/processing$/.exec(
+          url.pathname
+        );
+      if (request.method === 'GET' && processingMatch) {
+        const provider = this.options.runtime.getProvider(
+          decodeURIComponent(processingMatch[1]!)
+        );
+        const channelId = decodeURIComponent(processingMatch[2]!);
+        if (!provider.getChannelProcessing) {
+          json(response, 404, {
+            error: 'audio_channel_processing_not_supported'
+          });
+          return;
+        }
+        json(response, 200, {
+          processing: await provider.getChannelProcessing(channelId)
+        });
+        return;
+      }
+
       const healthMatch = /^\/v1\/audio\/providers\/([^/]+)\/state$/.exec(
         url.pathname
       );

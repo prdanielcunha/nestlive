@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type {
   AudioChannel,
+  AudioChannelProcessingState,
   AudioControlCommand,
   AudioSafetyLevel,
   MeterFrame
@@ -28,6 +29,7 @@ export function useNestLiveAudio(
   const [frame, setFrame] = useState<MeterFrame>();
   const [error, setError] = useState<string>();
   const [refreshKey, setRefreshKey] = useState(0);
+  const [processingRevision, setProcessingRevision] = useState(0);
 
   const api = useMemo(
     () => (connection ? new NestLiveAudioApiClient(connection) : undefined),
@@ -100,6 +102,13 @@ export function useNestLiveAudio(
                       : channel
                   )
                 );
+                if (
+                  patch.patch.processingDirty === true ||
+                  'gainDb' in patch.patch ||
+                  'phantom' in patch.patch
+                ) {
+                  setProcessingRevision(value => value + 1);
+                }
                 return;
               }
 
@@ -161,7 +170,28 @@ export function useNestLiveAudio(
           )
         );
       }
+      if (
+        command.type === 'setGain' ||
+        command.type === 'setPhantom' ||
+        command.type === 'setEq' ||
+        command.type === 'setGate' ||
+        command.type === 'setCompressor' ||
+        command.type === 'loadScene'
+      ) {
+        setProcessingRevision(value => value + 1);
+      }
       return execution;
+    },
+    [api, provider]
+  );
+
+  const getProcessing = useCallback(
+    async (channelId: string): Promise<AudioChannelProcessingState> => {
+      if (!api || !provider) throw new Error('audio_not_connected');
+      return api.channelProcessing(
+        provider.providerInstanceId,
+        channelId
+      );
     },
     [api, provider]
   );
@@ -173,6 +203,8 @@ export function useNestLiveAudio(
     frame,
     error,
     execute,
+    getProcessing,
+    processingRevision,
     refresh,
     inspectNetwork: api ? () => api.inspectNetwork() : undefined,
     discoverX32: api ? () => api.discoverX32() : undefined,

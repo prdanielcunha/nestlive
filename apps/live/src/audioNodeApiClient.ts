@@ -1,5 +1,6 @@
 import type {
   AudioChannel,
+  AudioChannelProcessingState,
   AudioCommandEnvelope,
   AudioCommandExecution,
   AudioControlCommand,
@@ -366,6 +367,20 @@ export class NestLiveAudioApiClient {
       `/v1/audio/providers/${encodeURIComponent(providerInstanceId)}/channels`
     );
     return body.channels;
+  }
+
+  async channelProcessing(
+    providerInstanceId: string,
+    channelId: string
+  ): Promise<AudioChannelProcessingState> {
+    const body = await this.request<{
+      processing: AudioChannelProcessingState;
+    }>(
+      `/v1/audio/providers/${encodeURIComponent(
+        providerInstanceId
+      )}/channels/${encodeURIComponent(channelId)}/processing`
+    );
+    return body.processing;
   }
 
   async execute(input: {
