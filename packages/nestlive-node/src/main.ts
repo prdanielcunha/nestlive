@@ -23,7 +23,9 @@ import {
   NestLiveAudioRuntime,
   NestLiveDiscoveryBroadcaster,
   PairingManager,
-  renderNestLiveLocalConsole
+  renderNestLiveLocalConsole,
+  renderSoundcraftSpikeConsole,
+  SoundcraftSpikeCoordinator
 } from './index';
 
 const HTTP_PORT = Number(process.env.NESTLIVE_HTTP_PORT || 4317);
@@ -104,6 +106,10 @@ async function main(): Promise<void> {
   const providerConfigStore = new AudioProviderConfigStore(
     path.join(STATE_DIR, 'audio-providers.json')
   );
+  const soundcraftSpike = new SoundcraftSpikeCoordinator(
+    path.join(STATE_DIR, 'certification')
+  );
+
   const pairing = new PairingManager(tokenStore, {
     nodeId: NODE_ID,
     onPin: value => {
@@ -279,6 +285,9 @@ async function main(): Promise<void> {
     revokeToken: token => tokenStore.revokeToken(token),
     activePairingCount: () => tokenStore.activeCount(),
     pairing,
+    soundcraftSpike,
+    soundcraftSpikeHtml: () =>
+      renderSoundcraftSpikeConsole(soundcraftSpike.status()),
     productionProxy:
       productionBaseUrl && productionToken
         ? {
@@ -354,7 +363,11 @@ async function main(): Promise<void> {
         pairings: pairing.localDisplay(),
         providers: runtime
           .listProviders()
-          .map(item => item.providerInstanceId)
+          .map(item => item.providerInstanceId),
+        soundcraftSpikeUrl:
+          'http://127.0.0.1:' +
+          HTTP_PORT +
+          '/local/soundcraft-spike'
       });
     }
   });
@@ -404,6 +417,7 @@ async function main(): Promise<void> {
     await discovery.stop().catch(() => undefined);
     await api.close().catch(() => undefined);
     await meters.close().catch(() => undefined);
+    await soundcraftSpike.dispose().catch(() => undefined);
     await runtime.dispose().catch(() => undefined);
     process.exit(0);
   };
