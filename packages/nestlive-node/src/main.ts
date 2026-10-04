@@ -1,10 +1,13 @@
 import { hostname, networkInterfaces, platform } from 'node:os';
 import path from 'node:path';
 import { existsSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { SimulatedAudioConsoleProvider } from '@millionsnest/nestlive-adapter-audio-sim';
 import {
+  allX32DeepControlsCertified,
   discoverX32OnSubnet,
+  validateX32CertificationManifest,
   X32AudioConsoleProvider
 } from '@millionsnest/nestlive-adapter-x32';
 import {
@@ -61,6 +64,39 @@ const PRODUCTION_WEB_ROOT =
     path.resolve(process.cwd(), 'apps/production/dist')
   ]);
 
+async function loadX32DeepControlCertification(input: {
+  providerInstanceId: string;
+  targetAddress: string;
+  model?: string;
+  firmware?: string;
+}): Promise<boolean> {
+  const file = path.join(STATE_DIR, 'x32-certification.json');
+  try {
+    const manifest = validateX32CertificationManifest(
+      JSON.parse(await readFile(file, 'utf8'))
+    );
+    return allX32DeepControlsCertified(manifest, input);
+  } catch (error) {
+    if (
+      error &&
+      typeof error === 'object' &&
+      'code' in error &&
+      error.code === 'ENOENT'
+    ) {
+      return false;
+    }
+
+    console.log(
+      JSON.stringify({
+        event: 'x32_deep_controls_certification_rejected',
+        reason:
+          error instanceof Error ? error.message : 'invalid_manifest'
+      })
+    );
+    return false;
+  }
+}
+
 async function main(): Promise<void> {
   const tokenStore = new AccessTokenStore(
     path.join(STATE_DIR, 'access-tokens.json')
@@ -115,7 +151,7 @@ async function main(): Promise<void> {
     const id = process.env.NESTLIVE_X32_ID || 'x32-primary';
     if (runtime.hasProvider(id)) await runtime.removeProvider(id);
 
-    const provider = new X32AudioConsoleProvider({
+    let provider = new X32AudioConsoleProvider({
       providerInstanceId: id,
       targetAddress: input.targetAddress,
       localAddress: input.localAddress
@@ -125,6 +161,29 @@ async function main(): Promise<void> {
     if (!probe.reachable) {
       await provider.dispose();
       throw new Error('x32_probe_failed');
+    }
+
+    const deepControlsCertified =
+      await loadX32DeepControlCertification({
+        providerInstanceId: id,
+        targetAddress: input.targetAddress,
+        model: probe.model,
+        firmware: probe.firmware
+      });
+
+    if (deepControlsCertified) {
+      await provider.dispose();
+      provider = new X32AudioConsoleProvider({
+        providerInstanceId: id,
+        targetAddress: input.targetAddress,
+        localAddress: input.localAddress,
+        enableDeepControls: true
+      });
+      const certifiedProbe = await provider.probe();
+      if (!certifiedProbe.reachable) {
+        await provider.dispose();
+        throw new Error('x32_certified_probe_failed');
+      }
     }
 
     runtime.register(provider);
@@ -144,7 +203,8 @@ async function main(): Promise<void> {
 
     return {
       providerInstanceId: id,
-      state: await provider.getConsoleState()
+      state: await provider.getConsoleState(),
+      deepControlsCertified
     };
   };
 
