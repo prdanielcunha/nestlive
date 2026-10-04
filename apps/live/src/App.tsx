@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { MeterFrame } from '@millionsnest/nestlive-domain';
+import type {
+  AudioChannelProcessingState,
+  MeterFrame
+} from '@millionsnest/nestlive-domain';
 import { AudioDoctorPanel } from './AudioDoctorPanel';
+import { AudioScenePanel } from './AudioScenePanel';
 import { ChannelInspector } from './ChannelInspector';
 import { GuidedSetup } from './GuidedSetup';
 import { HealthCenter } from './HealthCenter';
@@ -17,7 +21,13 @@ import {
 } from './nodePairing';
 import type { NestLiveNodeConnection } from './audioNodeApiClient';
 
-type Surface = 'mix' | 'soundcheck' | 'doctor' | 'health' | 'setup';
+type Surface =
+  | 'mix'
+  | 'soundcheck'
+  | 'doctor'
+  | 'scenes'
+  | 'health'
+  | 'setup';
 
 const environmentNode: NestLiveNodeConnection | undefined =
   import.meta.env.VITE_NESTLIVE_NODE_HTTP &&
@@ -46,6 +56,11 @@ export function App() {
   const configuredNode = environmentNode ?? storedNode;
   const isDemo = !configuredNode && import.meta.env.DEV;
   const audio = useNestLiveAudio(configuredNode);
+  const [processing, setProcessing] =
+    useState<AudioChannelProcessingState>();
+  const [processingLoading, setProcessingLoading] = useState(false);
+  const [processingError, setProcessingError] = useState<string>();
+  const [processingRefresh, setProcessingRefresh] = useState(0);
 
   useEffect(() => {
     if (!isDemo) return;
@@ -97,6 +112,54 @@ export function App() {
   const capabilities = new Set(audio.provider?.capabilities ?? []);
 
   useEffect(() => {
+    if (
+      isDemo ||
+      !configuredNode ||
+      audio.status !== 'online' ||
+      !selected?.id ||
+      !audio.provider
+    ) {
+      setProcessing(undefined);
+      setProcessingError(undefined);
+      return;
+    }
+
+    let alive = true;
+    setProcessingLoading(true);
+    setProcessingError(undefined);
+
+    void audio
+      .getProcessing(selected.id)
+      .then(value => {
+        if (alive) setProcessing(value);
+      })
+      .catch(error => {
+        if (!alive) return;
+        setProcessing(undefined);
+        setProcessingError(
+          error instanceof Error
+            ? error.message
+            : 'processing_read_failed'
+        );
+      })
+      .finally(() => {
+        if (alive) setProcessingLoading(false);
+      });
+
+    return () => {
+      alive = false;
+    };
+  }, [
+    audio.provider?.providerInstanceId,
+    audio.processingRevision,
+    audio.status,
+    configuredNode,
+    isDemo,
+    processingRefresh,
+    selected?.id
+  ]);
+
+  useEffect(() => {
     if (!configuredNode && !isDemo) {
       setSurface('setup');
     }
@@ -118,6 +181,7 @@ export function App() {
             ['mix', 'Mix'],
             ['soundcheck', 'Soundcheck'],
             ['doctor', 'Audio Doctor'],
+            ['scenes', 'Cenas'],
             ['health', 'Health'],
             ['setup', 'Configurar']
           ] as const).map(([id, label]) => (
@@ -237,6 +301,12 @@ export function App() {
                   ? undefined
                   : (command, safety) => audio.execute(command, safety)
               }
+              processing={processing}
+              processingLoading={processingLoading}
+              processingError={processingError}
+              onProcessingRefresh={() =>
+                setProcessingRefresh(value => value + 1)
+              }
             />
           </div>
         ) : null}
@@ -250,6 +320,19 @@ export function App() {
             stale={stale}
             providerOnline={
               isDemo || audio.status === 'online'
+            }
+          />
+        ) : null}
+        {surface === 'scenes' ? (
+          <AudioScenePanel
+            enabled={
+              !isDemo &&
+              capabilities.has('audio.scene.recall')
+            }
+            onCommand={
+              isDemo
+                ? undefined
+                : (command, safety) => audio.execute(command, safety)
             }
           />
         ) : null}
