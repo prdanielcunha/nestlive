@@ -117,6 +117,7 @@ export interface AudioApiServerOptions {
     providerInstanceId: string;
     state: unknown;
   }>;
+  localConsoleHtml?: () => Promise<string>;
 }
 
 export class AudioApiServer {
@@ -164,6 +165,33 @@ export class AudioApiServer {
         request.url ?? '/',
         `http://${request.headers.host ?? 'localhost'}`
       );
+
+      if (
+        request.method === 'GET' &&
+        (url.pathname === '/' || url.pathname === '/local') &&
+        this.options.localConsoleHtml
+      ) {
+        const remoteAddress = request.socket.remoteAddress ?? '';
+        const loopback =
+          remoteAddress === '127.0.0.1' ||
+          remoteAddress === '::1' ||
+          remoteAddress === '::ffff:127.0.0.1';
+
+        if (!loopback) {
+          json(response, 404, { error: 'not_found' });
+          return;
+        }
+
+        response.statusCode = 200;
+        response.setHeader('content-type', 'text/html; charset=utf-8');
+        response.setHeader('cache-control', 'no-store');
+        response.setHeader(
+          'content-security-policy',
+          "default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; frame-ancestors 'none'"
+        );
+        response.end(await this.options.localConsoleHtml());
+        return;
+      }
 
       if (request.method === 'GET' && url.pathname === '/health') {
         json(response, 200, {

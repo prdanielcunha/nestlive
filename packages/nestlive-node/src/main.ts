@@ -18,7 +18,8 @@ import {
   MeterWebSocketServer,
   NestLiveAudioRuntime,
   NestLiveDiscoveryBroadcaster,
-  PairingManager
+  PairingManager,
+  renderNestLiveLocalConsole
 } from './index';
 
 const HTTP_PORT = Number(process.env.NESTLIVE_HTTP_PORT || 4317);
@@ -221,6 +222,32 @@ async function main(): Promise<void> {
         localAddress,
         networkInterfaceId: audioInterface.id,
         persist: true
+      });
+    },
+    localConsoleHtml: async () => {
+      const interfaces = await inspectNetwork();
+      const plan = buildPreDiscoveryNetworkPlan(interfaces);
+      const cloudInterface = interfaces.find(
+        item => item.id === plan.cloudInterfaceId
+      );
+      const address = cloudInterface?.ipv4[0];
+      const webUrl =
+        process.env.NESTLIVE_WEB_URL?.trim() ||
+        'https://nestlive.millionsnest.com';
+      const nodeBase = address
+        ? `http://${address}:${HTTP_PORT}`
+        : undefined;
+      const pairUrl = nodeBase
+        ? `${webUrl}/?pair=${encodeURIComponent(nodeBase)}`
+        : undefined;
+
+      return renderNestLiveLocalConsole({
+        displayName: DISPLAY_NAME,
+        pairUrl,
+        pairings: pairing.localDisplay(),
+        providers: runtime
+          .listProviders()
+          .map(item => item.providerInstanceId)
       });
     }
   });
