@@ -5,7 +5,12 @@ import {
   decodeOscMessage,
   decodeX32MeterBlob,
   encodeOscMessage,
+  headampGainToNormalized,
   linearMeterToDb,
+  normalizedToHeadampGain,
+  normalizedToQ,
+  qToNormalized,
+  resolveX32HeadampIndex,
   x32LevelToDb,
   type OscArgument,
   type OscMessage,
@@ -28,6 +33,12 @@ class FakeTransport implements X32Transport {
         address,
         args: [first]
       });
+      if (address === '/-snap/load' && first.type === 'i') {
+        this.values.set('/-show/prepos/current', {
+          address: '/-show/prepos/current',
+          args: [{ type: 'i', value: first.value }]
+        });
+      }
     }
   }
 
@@ -87,6 +98,26 @@ describe('X32 OSC foundation', () => {
     }
   });
 
+  it('maps physical headamps and processing values without guessed units', () => {
+    expect(resolveX32HeadampIndex(1)).toBe(0);
+    expect(resolveX32HeadampIndex(32)).toBe(31);
+    expect(resolveX32HeadampIndex(33)).toBe(32);
+    expect(resolveX32HeadampIndex(80)).toBe(79);
+    expect(resolveX32HeadampIndex(81)).toBe(80);
+    expect(resolveX32HeadampIndex(128)).toBe(127);
+    expect(resolveX32HeadampIndex(129)).toBeUndefined();
+
+    for (const db of [-12, 0, 24, 60]) {
+      expect(
+        normalizedToHeadampGain(headampGainToNormalized(db))
+      ).toBeCloseTo(db, 5);
+    }
+
+    for (const q of [0.3, 1, 3, 10]) {
+      expect(normalizedToQ(qToNormalized(q))).toBeCloseTo(q, 5);
+    }
+  });
+
   it('uses linear full-scale meter conversion', () => {
     expect(linearMeterToDb(1)).toBeCloseTo(0);
     expect(linearMeterToDb(0.5)).toBeCloseTo(-6.0206, 3);
@@ -103,6 +134,17 @@ describe('X32 OSC foundation', () => {
     expect(provider.capabilities().has('audio.busSend.write')).toBe(true);
     expect(provider.capabilities().has('audio.phantom.write')).toBe(false);
     expect(provider.capabilities().has('audio.gain.write')).toBe(false);
+
+    const certifiedLabProvider = new X32AudioConsoleProvider({
+      providerInstanceId: 'x32-lab',
+      targetAddress: '192.168.32.2',
+      transport: new FakeTransport(),
+      enableDeepControls: true
+    });
+    expect(certifiedLabProvider.capabilities().has('audio.gain.write')).toBe(true);
+    expect(certifiedLabProvider.capabilities().has('audio.phantom.write')).toBe(true);
+    expect(certifiedLabProvider.capabilities().has('audio.eq.write')).toBe(true);
+    expect(certifiedLabProvider.capabilities().has('audio.scene.recall')).toBe(true);
   });
 
   it('reads Main LR assignment without inventing deeper routing', async () => {
@@ -138,6 +180,98 @@ describe('X32 OSC foundation', () => {
         item => item.address === '/ch/01/mix/03/level'
       )
     ).toBe(true);
+  });
+
+  it('resolves channel source before touching gain or phantom', async () => {
+    const transport = new FakeTransport();
+    transport.values.set('/ch/01/config/source', {
+      address: '/ch/01/config/source',
+      args: [{ type: 'i', value: 33 }]
+    });
+    const provider = new X32AudioConsoleProvider({
+      providerInstanceId: 'x32-lab',
+      targetAddress: '192.168.32.2',
+      transport,
+      enableDeepControls: true
+    });
+
+    const gain = await provider.setGain('ch-01', 24);
+    expect(gain.observedState?.gainDb).toBeCloseTo(24, 4);
+    expect(
+      transport.sent.some(
+        item => item.address === '/headamp/032/gain'
+      )
+    ).toBe(true);
+
+    const phantom = await provider.setPhantom('ch-01', true);
+    expect(phantom.observedState?.phantom).toBe(true);
+    expect(
+      transport.sent.some(
+        item => item.address === '/headamp/032/phantom'
+      )
+    ).toBe(true);
+  });
+
+  it('refuses gain writes when the channel source has no physical headamp', async () => {
+    const transport = new FakeTransport();
+    transport.values.set('/ch/01/config/source', {
+      address: '/ch/01/config/source',
+      args: [{ type: 'i', value: 129 }]
+    });
+    const provider = new X32AudioConsoleProvider({
+      providerInstanceId: 'x32-lab',
+      targetAddress: '192.168.32.2',
+      transport,
+      enableDeepControls: true
+    });
+
+    await expect(provider.setGain('ch-01', 12)).rejects.toThrow(
+      'x32_channel_source_has_no_controllable_headamp'
+    );
+  });
+
+  it('writes deep processing with read-back and confirms scene recall', async () => {
+    const transport = new FakeTransport();
+    transport.values.set('/ch/01/config/source', {
+      address: '/ch/01/config/source',
+      args: [{ type: 'i', value: 1 }]
+    });
+    const provider = new X32AudioConsoleProvider({
+      providerInstanceId: 'x32-lab',
+      targetAddress: '192.168.32.2',
+      transport,
+      enableDeepControls: true
+    });
+
+    const eq = await provider.setEq('ch-01', {
+      on: true,
+      bands: [
+        { index: 1, frequencyHz: 120, gainDb: 2.5, q: 1.2 }
+      ]
+    });
+    expect(eq.accepted).toBe(true);
+    expect(
+      transport.sent.some(item => item.address === '/ch/01/eq/1/f')
+    ).toBe(true);
+
+    const gate = await provider.setGate('ch-01', {
+      on: true,
+      thresholdDb: -35,
+      releaseMs: 250
+    });
+    expect(gate.accepted).toBe(true);
+
+    const compressor = await provider.setCompressor('ch-01', {
+      on: true,
+      thresholdDb: -18,
+      ratio: 4,
+      makeupGainDb: 3
+    });
+    expect(compressor.accepted).toBe(true);
+
+    const scene = await provider.loadScene('scene-7');
+    expect(scene.accepted).toBe(true);
+    expect(scene.observedState?.sceneIndex).toBe(6);
   });
 
   it('confirms observed fader state after writes', async () => {
