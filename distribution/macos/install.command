@@ -4,14 +4,16 @@ src="$(cd "$(dirname "$0")" && pwd)"
 root="$HOME/Library/Application Support/NestLive"
 bin="$root/bin"
 web="$root/web"
+production_web="$root/web-production"
 agent="$HOME/Library/LaunchAgents/com.millionsnest.nestlive.plist"
-mkdir -p "$bin" "$web" "$(dirname "$agent")"
+mkdir -p "$bin" "$web" "$production_web" "$(dirname "$agent")"
 for name in NestLiveService NestLiveAudioNode NestLiveProductionNode; do
   cp "$src/$name" "$bin/$name"
   chmod +x "$bin/$name"
 done
-rm -rf "$web"/*
+rm -rf "$web"/* "$production_web"/*
 cp -R "$src/web/." "$web/"
+cp -R "$src/web-production/." "$production_web/"
 cat > "$agent" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

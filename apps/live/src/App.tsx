@@ -141,9 +141,11 @@ export function App() {
             <strong>
               {isDemo
                 ? 'Simulador local'
-                : audio.status === 'online'
-                  ? 'Node conectado'
-                  : 'Conectando Node'}
+                : !configuredNode
+                  ? 'Node desconectado'
+                  : audio.status === 'online'
+                    ? 'Node conectado'
+                    : 'Conectando Node'}
             </strong>
             <small>
               {isDemo

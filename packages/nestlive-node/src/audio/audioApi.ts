@@ -332,6 +332,29 @@ export class AudioApiServer {
       }
 
       if (
+        this.options.productionProxy &&
+        url.pathname.startsWith('/local/')
+      ) {
+        const remoteAddress = request.socket.remoteAddress ?? '';
+        const loopback =
+          remoteAddress === '127.0.0.1' ||
+          remoteAddress === '::1' ||
+          remoteAddress === '::ffff:127.0.0.1';
+
+        if (!loopback) {
+          json(response, 403, { error: 'local_only' });
+          return;
+        }
+
+        await proxyToProductionEngine(request, response, {
+          ...this.options.productionProxy,
+          clientToken: '',
+          stripPrefix: false
+        });
+        return;
+      }
+
+      if (
         request.method === 'POST' &&
         url.pathname === '/collaboration/redeem' &&
         this.options.productionProxy

@@ -4,12 +4,14 @@ src="$(cd "$(dirname "$0")" && pwd)"
 root="${XDG_DATA_HOME:-$HOME/.local/share}/nestlive"
 bin="$root/bin"
 web="$root/web"
-mkdir -p "$bin" "$web"
+production_web="$root/web-production"
+mkdir -p "$bin" "$web" "$production_web"
 for name in NestLiveService NestLiveAudioNode NestLiveProductionNode; do
   install -m 755 "$src/$name" "$bin/$name"
 done
-rm -rf "$web"/*
+rm -rf "$web"/* "$production_web"/*
 cp -R "$src/web/." "$web/"
+cp -R "$src/web-production/." "$production_web/"
 if command -v systemctl >/dev/null 2>&1; then
   unit="$HOME/.config/systemd/user/nestlive.service"
   mkdir -p "$(dirname "$unit")"

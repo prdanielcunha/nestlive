@@ -241,7 +241,7 @@ export function App() {
     const currentPlan = liveNode.nodeState?.state.servicePlan || null;
     const expectedItemIds = nodeScale.songs.map(song => `song:${song.id}`).join('|');
     // Runtime additions made from the Live cockpit use the live-song:* namespace.
-    // They must survive the automatic MusicScale -> ServicePlan reconciliation.
+    // They must survive the automatic NestLive → ServicePlan reconciliation.
     // Only canonical scale items participate in the stale-plan comparison.
     const currentScaleItemIds = currentPlan?.items
       .filter(item => item.id.startsWith('song:'))
@@ -328,8 +328,8 @@ export function App() {
     return (
       <main className="login-shell">
         <section className="login-panel">
-          <div className="brand-kicker">MUSICSCALE / LIVE</div>
-          <h1>MusicScale <strong>LIVE</strong></h1>
+          <div className="brand-kicker">NESTLIVE / PRODUCTION</div>
+          <h1>NestLive <strong>PRODUCTION</strong></h1>
           <p>{t('sameEcosystem')}</p>
           <button className="primary" onClick={login}>{t('signIn')}</button>
         </section>
@@ -442,7 +442,7 @@ export function App() {
       </a>
       <header className="topbar">
         <div className="topbar-brand">
-          <div className="brand-kicker">MUSICSCALE / LIVE</div>
+          <div className="brand-kicker">NESTLIVE / PRODUCTION</div>
           <strong>{t('brand')}</strong>
         </div>
         <div className="top-actions">

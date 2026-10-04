@@ -2940,3 +2940,5 @@ img,video,canvas,svg{max-width:100%}
   .live-smart-dock-primary{min-height:54px;padding:7px 8px 7px 10px;border-radius:11px}
   .live-smart-dock-primary strong{font-size:12px}
 }
+
+.production-back-link { text-decoration:none; display:inline-flex; align-items:center; justify-content:center; }
