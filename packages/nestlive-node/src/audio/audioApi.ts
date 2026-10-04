@@ -12,14 +12,85 @@ function json(
 ): void {
   response.statusCode = status;
   response.setHeader('content-type', 'application/json; charset=utf-8');
+  response.setHeader('cache-control', 'no-store');
   response.end(JSON.stringify(body));
 }
 
-async function readJson(request: http.IncomingMessage): Promise<unknown> {
+async function readJson(
+  request: http.IncomingMessage,
+  maxBytes = 256 * 1024
+): Promise<unknown> {
   const chunks: Buffer[] = [];
-  for await (const chunk of request) chunks.push(Buffer.from(chunk));
+  let size = 0;
+
+  for await (const chunk of request) {
+    const buffer = Buffer.from(chunk);
+    size += buffer.byteLength;
+    if (size > maxBytes) throw new Error('payload_too_large');
+    chunks.push(buffer);
+  }
+
   const raw = Buffer.concat(chunks).toString('utf8');
   return raw ? JSON.parse(raw) : {};
+}
+
+export function isTrustedNestLiveOrigin(origin: string): boolean {
+  try {
+    const url = new URL(origin);
+    const host = url.hostname.toLowerCase();
+
+    if (
+      url.protocol === 'https:' &&
+      (host === 'millionsnest.com' || host.endsWith('.millionsnest.com'))
+    ) {
+      return true;
+    }
+
+    if (
+      url.protocol === 'http:' &&
+      (host === 'localhost' ||
+        host === '127.0.0.1' ||
+        host === '::1')
+    ) {
+      return true;
+    }
+  } catch {
+    return false;
+  }
+
+  return false;
+}
+
+function applyCors(
+  request: http.IncomingMessage,
+  response: http.ServerResponse,
+  allowedOrigins: ReadonlySet<string>
+): void {
+  const origin = request.headers.origin;
+  const trusted =
+    Boolean(origin) &&
+    (allowedOrigins.has(origin!) || isTrustedNestLiveOrigin(origin!));
+
+  if (trusted && origin) {
+    response.setHeader('access-control-allow-origin', origin);
+    response.setHeader('vary', 'Origin');
+  }
+
+  response.setHeader(
+    'access-control-allow-headers',
+    'authorization,content-type,x-nestlive-confirmation'
+  );
+  response.setHeader(
+    'access-control-allow-methods',
+    'GET,POST,OPTIONS'
+  );
+
+  if (
+    trusted &&
+    request.headers['access-control-request-private-network'] === 'true'
+  ) {
+    response.setHeader('access-control-allow-private-network', 'true');
+  }
 }
 
 export interface AudioApiServerOptions {
@@ -27,12 +98,15 @@ export interface AudioApiServerOptions {
   port: number;
   runtime: NestLiveAudioRuntime;
   authenticate: (token: string) => boolean | Promise<boolean>;
+  allowedOrigins?: ReadonlySet<string>;
 }
 
 export class AudioApiServer {
   private readonly server: http.Server;
+  private readonly allowedOrigins: ReadonlySet<string>;
 
   constructor(private readonly options: AudioApiServerOptions) {
+    this.allowedOrigins = options.allowedOrigins ?? new Set();
     this.server = http.createServer((request, response) => {
       void this.handle(request, response);
     });
@@ -59,18 +133,35 @@ export class AudioApiServer {
     request: http.IncomingMessage,
     response: http.ServerResponse
   ): Promise<void> {
+    applyCors(request, response, this.allowedOrigins);
+
+    if (request.method === 'OPTIONS') {
+      response.statusCode = 204;
+      response.end();
+      return;
+    }
+
     try {
+      const url = new URL(
+        request.url ?? '/',
+        `http://${request.headers.host ?? 'localhost'}`
+      );
+
+      if (request.method === 'GET' && url.pathname === '/health') {
+        json(response, 200, {
+          product: 'NestLive Node',
+          status: 'online',
+          now: new Date().toISOString()
+        });
+        return;
+      }
+
       const auth =
         request.headers.authorization?.replace(/^Bearer\s+/i, '') ?? '';
       if (!(await this.options.authenticate(auth))) {
         json(response, 401, { error: 'unauthorized' });
         return;
       }
-
-      const url = new URL(
-        request.url ?? '/',
-        `http://${request.headers.host ?? 'localhost'}`
-      );
 
       if (request.method === 'GET' && url.pathname === '/v1/audio/providers') {
         json(response, 200, {
