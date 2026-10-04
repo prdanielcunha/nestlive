@@ -1,7 +1,11 @@
 import { useEffect, useState } from 'react';
-import type { AudioControlCommand } from '@millionsnest/nestlive-domain';
+import type {
+  AudioChannelProcessingState,
+  AudioControlCommand
+} from '@millionsnest/nestlive-domain';
 import type { MixChannelViewModel } from './uiModel';
 import { MeterBar } from './MeterBar';
+import { ChannelProcessingPanel } from './ChannelProcessingPanel';
 
 export function ChannelInspector(props: {
   channel?: MixChannelViewModel;
@@ -11,6 +15,10 @@ export function ChannelInspector(props: {
     command: AudioControlCommand,
     confirmedSafetyLevel?: 'normal' | 'guarded' | 'critical'
   ) => Promise<unknown>;
+  processing?: AudioChannelProcessingState;
+  processingLoading?: boolean;
+  processingError?: string;
+  onProcessingRefresh?: () => void;
 }) {
   const [draftFader, setDraftFader] = useState(-96);
   const [confirmMute, setConfirmMute] = useState(false);
@@ -172,6 +180,15 @@ export function ChannelInspector(props: {
       <p className="inspector__note">
         Controles só aparecem quando a mesa/provider confirma a capability.
       </p>
+
+      <ChannelProcessingPanel
+        processing={props.processing}
+        capabilities={props.capabilities ?? new Set()}
+        loading={props.processingLoading}
+        error={props.processingError}
+        onCommand={props.onCommand}
+        onRefresh={props.onProcessingRefresh}
+      />
     </aside>
   );
 }
