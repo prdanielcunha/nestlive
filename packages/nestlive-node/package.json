@@ -17,10 +17,12 @@
     "@millionsnest/nestlive-domain": "0.1.0",
     "@millionsnest/nestlive-adapter-audio-sim": "0.1.0",
     "@millionsnest/nestlive-adapter-x32": "0.1.0",
+    "qrcode": "^1.5.4",
     "ws": "^8.18.3"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
+    "@types/qrcode": "^1.5.5",
     "@types/ws": "^8.18.1",
     "esbuild": "^0.25.12",
     "tsx": "^4.21.0",

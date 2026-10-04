@@ -8,6 +8,7 @@ export * from './network/discovery';
 export * from './security/accessTokenStore';
 export * from './security/pairingManager';
 export * from './runtime/stateDir';
+export * from './runtime/localConsole';
 export * from './remote/remoteMixAuthority';
 export * from './audio/providerConfig';
 export * from './audio/meterEngine';

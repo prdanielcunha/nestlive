@@ -13,21 +13,25 @@ interface InternalChallenge extends PairingChallenge {
   attempts: number;
 }
 
+export interface LocalPairingDisplay {
+  challengeId: string;
+  deviceName: string;
+  pin: string;
+  expiresAt: string;
+}
+
 export interface PairingManagerOptions {
   ttlMs?: number;
   maxAttempts?: number;
-  onPin?: (input: {
-    challengeId: string;
-    deviceName: string;
-    pin: string;
-    expiresAt: string;
-  }) => void;
+  maxConcurrent?: number;
+  onPin?: (input: LocalPairingDisplay) => void;
 }
 
 export class PairingManager {
   private readonly challenges = new Map<string, InternalChallenge>();
   private readonly ttlMs: number;
   private readonly maxAttempts: number;
+  private readonly maxConcurrent: number;
 
   constructor(
     private readonly tokens: AccessTokenStore,
@@ -35,6 +39,7 @@ export class PairingManager {
   ) {
     this.ttlMs = options.ttlMs ?? 2 * 60_000;
     this.maxAttempts = options.maxAttempts ?? 5;
+    this.maxConcurrent = options.maxConcurrent ?? 5;
   }
 
   create(deviceName: string, now = new Date()): PairingChallenge {
@@ -42,6 +47,10 @@ export class PairingManager {
     if (!safeName) throw new Error('pairing_device_name_required');
 
     this.sweep(now);
+    if (this.challenges.size >= this.maxConcurrent) {
+      throw new Error('pairing_too_many_pending');
+    }
+
     const challengeId = randomBytes(16).toString('hex');
     const pin = String(randomInt(0, 1_000_000)).padStart(6, '0');
     const expiresAt = new Date(now.getTime() + this.ttlMs).toISOString();
@@ -68,6 +77,16 @@ export class PairingManager {
       expiresAt,
       displayedOnNode: true
     };
+  }
+
+  localDisplay(now = new Date()): LocalPairingDisplay[] {
+    this.sweep(now);
+    return [...this.challenges.values()].map(challenge => ({
+      challengeId: challenge.challengeId,
+      deviceName: challenge.deviceName,
+      pin: challenge.pin,
+      expiresAt: challenge.expiresAt
+    }));
   }
 
   async complete(input: {
