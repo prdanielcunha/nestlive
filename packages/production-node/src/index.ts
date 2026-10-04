@@ -97,6 +97,7 @@ function liveEnv(name: string): string | undefined {
 // The public/local NestLive gateway owns 4317. The production engine stays
 // loopback-only by default and is reached through the authenticated gateway.
 const PORT = Number(liveEnv('NODE_PORT') || 4337);
+const PUBLIC_PORT = Number(liveEnv('GATEWAY_PORT') || 4317);
 const HOST = liveEnv('NODE_HOST') || '127.0.0.1';
 const VERSION = '0.1.0';
 const DEV_TOKEN = liveEnv('DEV_TOKEN') || '';
@@ -215,7 +216,7 @@ const peerFederation = new PeerFederation({
 const peerDiscovery = new PeerDiscovery({
   nodeId,
   displayName: nodeDisplayName,
-  httpPort: PORT,
+  httpPort: PUBLIC_PORT,
   version: VERSION
 });
 
@@ -1071,10 +1072,58 @@ function assertLiveRequestScope(
   }
 }
 
+function forwardedBinding(req: IncomingMessage) {
+  const organizationId = String(
+    req.headers['x-nestlive-organization-id'] || ''
+  ).trim();
+  const venueId = String(
+    req.headers['x-nestlive-venue-id'] || ''
+  ).trim();
+  const liveSystemId = String(
+    req.headers['x-nestlive-system-id'] || ''
+  ).trim();
+  const deviceId = String(
+    req.headers['x-nestlive-device-id'] || ''
+  ).trim();
+  const nodeIdHeader = String(
+    req.headers['x-nestlive-node-id'] || nodeId
+  ).trim();
+
+  if (!organizationId || !venueId || !liveSystemId || !deviceId) {
+    return null;
+  }
+
+  let deviceName = String(
+    req.headers['x-nestlive-device-name'] || 'NestLive device'
+  );
+  try {
+    deviceName = decodeURIComponent(deviceName);
+  } catch {
+    deviceName = 'NestLive device';
+  }
+
+  const now = new Date().toISOString();
+  return {
+    nodeId: nodeIdHeader || nodeId,
+    organizationId,
+    venueId,
+    liveSystemId,
+    deviceId,
+    deviceName,
+    pairedAt: now,
+    lastSeenAt: now
+  };
+}
+
 async function authorize(req: IncomingMessage) {
   const token = bearerToken(req);
   if (DEV_TOKEN && token === DEV_TOKEN) {
-    return { dev: true as const, token, binding: null, collaboration: null };
+    return {
+      dev: true as const,
+      token,
+      binding: forwardedBinding(req),
+      collaboration: null
+    };
   }
   const binding = await pairingStore.authorize(token);
   if (binding) {
@@ -1796,7 +1845,7 @@ async function start(): Promise<void> {
         nodeId,
         hostname: hostname(),
         displayName: nodeDisplayName,
-        port: PORT
+        port: PUBLIC_PORT
       });
     }
 

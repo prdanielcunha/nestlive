@@ -65,6 +65,8 @@ export function buildServiceChildren(
         ...env,
         NESTLIVE_NODE_HOST: '127.0.0.1',
         NESTLIVE_NODE_PORT: productionPort,
+        NESTLIVE_GATEWAY_PORT:
+          env.NESTLIVE_HTTP_PORT?.trim() || '4317',
         NESTLIVE_DEV_TOKEN: token,
         NESTLIVE_PAIRING_ENABLED: 'false'
       }
