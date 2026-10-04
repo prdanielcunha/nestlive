@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "venue": "Industrial",
+  "consoleModel": "Soundcraft Si Expression",
+  "firmware": "",
+  "testedAt": "",
+  "tester": "",
+  "capabilities": [
+    { "capability": "audio.console.state.read", "status": "untested" },
+    { "capability": "audio.channel.read", "status": "untested" },
+    { "capability": "audio.bus.read", "status": "untested" },
+    { "capability": "audio.group.read", "status": "untested" },
+    { "capability": "audio.routing.read", "status": "untested" },
+    { "capability": "audio.meter.read", "status": "untested" },
+    { "capability": "audio.fader.write", "status": "untested" },
+    { "capability": "audio.mute.write", "status": "untested" },
+    { "capability": "audio.pan.write", "status": "untested" },
+    { "capability": "audio.gain.write", "status": "untested" },
+    { "capability": "audio.phantom.write", "status": "untested" },
+    { "capability": "audio.eq.write", "status": "untested" },
+    { "capability": "audio.gate.write", "status": "untested" },
+    { "capability": "audio.compressor.write", "status": "untested" },
+    { "capability": "audio.busSend.write", "status": "untested" },
+    { "capability": "audio.scene.read", "status": "untested" },
+    { "capability": "audio.scene.save", "status": "untested" },
+    { "capability": "audio.scene.recall", "status": "untested" }
+  ]
+}
