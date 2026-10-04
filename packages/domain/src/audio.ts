@@ -197,6 +197,7 @@ export interface AudioConsoleProvider {
 
   loadScene?(sceneId: EntityId): Promise<AudioCommandResult>;
   saveScene?(name: string): Promise<AudioCommandResult>;
+  dispose?(): Promise<void>;
 }
 
 export const AUDIO_SAFETY_BY_CAPABILITY: Readonly<
