@@ -1,0 +1,14 @@
+#!/bin/bash
+set -e
+uid="$(stat -f '%u' /dev/console 2>/dev/null || echo '')"
+if [[ -n "$uid" && "$uid" != "0" ]]; then
+  user="$(id -nu "$uid")"
+  home="$(dscl . -read "/Users/$user" NFSHomeDirectory | awk '{print $2}')"
+  agent_dir="$home/Library/LaunchAgents"
+  mkdir -p "$agent_dir"
+  cp "/Library/Application Support/NestLive/com.millionsnest.nestlive.plist" "$agent_dir/com.millionsnest.nestlive.plist"
+  chown "$uid" "$agent_dir/com.millionsnest.nestlive.plist"
+  launchctl bootout "gui/$uid" "$agent_dir/com.millionsnest.nestlive.plist" 2>/dev/null || true
+  launchctl bootstrap "gui/$uid" "$agent_dir/com.millionsnest.nestlive.plist" || true
+fi
+exit 0

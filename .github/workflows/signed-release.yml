@@ -1,0 +1,219 @@
+name: Signed NestLive release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version, for example 0.1.0-beta.1"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nestlive-signed-release
+  cancel-in-progress: false
+
+jobs:
+  windows:
+    name: Windows signed installer
+    runs-on: windows-latest
+    timeout-minutes: 50
+    env:
+      RELEASE_VERSION: ${{ inputs.version }}
+      WINDOWS_CERT_PFX_BASE64: ${{ secrets.NESTLIVE_WINDOWS_CERT_PFX_BASE64 }}
+      WINDOWS_CERT_PASSWORD: ${{ secrets.NESTLIVE_WINDOWS_CERT_PASSWORD }}
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Require signing credentials
+        shell: pwsh
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_CERT_PFX_BASE64)) { throw "NESTLIVE_WINDOWS_CERT_PFX_BASE64 is required." }
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_CERT_PASSWORD)) { throw "NESTLIVE_WINDOWS_CERT_PASSWORD is required." }
+
+      - name: Install and verify
+        run: |
+          npm install --no-audit --no-fund
+          npm run typecheck
+          npm test
+          npm run build
+
+      - name: Build NestLive executables
+        run: |
+          npm run package:sea --workspace=@millionsnest/nestlive-production-node
+          npm run package:sea --workspace=@millionsnest/nestlive-node
+          npm run package:sea --workspace=@millionsnest/nestlive-service
+
+      - name: Stage and sign executables
+        shell: pwsh
+        run: |
+          $out = Join-Path $env:RUNNER_TEMP "nestlive-signed"
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+          New-Item -ItemType Directory -Force -Path (Join-Path $out "web") | Out-Null
+          New-Item -ItemType Directory -Force -Path (Join-Path $out "web-production") | Out-Null
+          Copy-Item "packages/nestlive-service/dist/NestLiveService.exe" $out
+          Copy-Item "packages/nestlive-node/dist/NestLiveAudioNode.exe" $out
+          Copy-Item "packages/production-node/dist/NestLiveProductionNode.exe" $out
+          Copy-Item "apps/live/dist/*" (Join-Path $out "web") -Recurse -Force
+          Copy-Item "apps/production/dist/*" (Join-Path $out "web-production") -Recurse -Force
+          Copy-Item "distribution/README-INSTALL.md" $out
+
+          $cert = Join-Path $env:RUNNER_TEMP "nestlive-signing.pfx"
+          [IO.File]::WriteAllBytes($cert, [Convert]::FromBase64String($env:WINDOWS_CERT_PFX_BASE64))
+          $signtool = (Get-Command signtool.exe -ErrorAction SilentlyContinue).Source
+          if (-not $signtool) {
+            $signtool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin" -Filter signtool.exe -Recurse |
+              Sort-Object FullName -Descending |
+              Select-Object -First 1 -ExpandProperty FullName
+          }
+          if (-not $signtool) { throw "signtool.exe was not found." }
+
+          foreach ($name in @("NestLiveService.exe","NestLiveAudioNode.exe","NestLiveProductionNode.exe")) {
+            & $signtool sign /fd SHA256 /td SHA256 /tr "http://timestamp.digicert.com" /f $cert /p $env:WINDOWS_CERT_PASSWORD (Join-Path $out $name)
+            if ($LASTEXITCODE -ne 0) { throw "Signing failed: $name" }
+          }
+
+          "PACKAGE_DIR=$out" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "SIGNTOOL=$signtool" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "CERT_PATH=$cert" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Build and sign installer
+        shell: pwsh
+        run: |
+          choco install innosetup --no-progress -y
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          & $iscc "/DSourceDir=$env:PACKAGE_DIR" "/DOutputDir=$env:PACKAGE_DIR" "/DAppVersion=$env:RELEASE_VERSION" "distribution/windows/NestLive.iss"
+          if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed." }
+
+          $setup = Join-Path $env:PACKAGE_DIR "NestLiveSetup.exe"
+          & $env:SIGNTOOL sign /fd SHA256 /td SHA256 /tr "http://timestamp.digicert.com" /f $env:CERT_PATH /p $env:WINDOWS_CERT_PASSWORD $setup
+          if ($LASTEXITCODE -ne 0) { throw "Installer signing failed." }
+
+          foreach ($name in @("NestLiveService.exe","NestLiveAudioNode.exe","NestLiveProductionNode.exe","NestLiveSetup.exe")) {
+            & $env:SIGNTOOL verify /pa /all (Join-Path $env:PACKAGE_DIR $name)
+            if ($LASTEXITCODE -ne 0) { throw "Signature verification failed: $name" }
+          }
+
+          Get-ChildItem $env:PACKAGE_DIR -Filter "NestLive*.exe" | ForEach-Object {
+            $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower()
+            "$hash  $($_.Name)" | Add-Content (Join-Path $env:PACKAGE_DIR "SHA256SUMS.txt")
+          }
+          Remove-Item $env:CERT_PATH -Force
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nestlive-windows-x64-signed-${{ inputs.version }}
+          path: ${{ env.PACKAGE_DIR }}
+          if-no-files-found: error
+          retention-days: 30
+
+  macos:
+    name: macOS signed and notarized package
+    runs-on: macos-14
+    timeout-minutes: 55
+    env:
+      RELEASE_VERSION: ${{ inputs.version }}
+      APPLE_CERT_P12_BASE64: ${{ secrets.NESTLIVE_APPLE_CERT_P12_BASE64 }}
+      APPLE_CERT_PASSWORD: ${{ secrets.NESTLIVE_APPLE_CERT_PASSWORD }}
+      APPLE_DEVELOPER_ID_APPLICATION: ${{ secrets.NESTLIVE_APPLE_DEVELOPER_ID_APPLICATION }}
+      APPLE_DEVELOPER_ID_INSTALLER: ${{ secrets.NESTLIVE_APPLE_DEVELOPER_ID_INSTALLER }}
+      APPLE_ID: ${{ secrets.NESTLIVE_APPLE_ID }}
+      APPLE_TEAM_ID: ${{ secrets.NESTLIVE_APPLE_TEAM_ID }}
+      APPLE_APP_PASSWORD: ${{ secrets.NESTLIVE_APPLE_APP_PASSWORD }}
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Require Apple credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in APPLE_CERT_P12_BASE64 APPLE_CERT_PASSWORD APPLE_DEVELOPER_ID_APPLICATION APPLE_DEVELOPER_ID_INSTALLER APPLE_ID APPLE_TEAM_ID APPLE_APP_PASSWORD; do
+            if [[ -z "${!name:-}" ]]; then echo "::error::$name is required"; exit 1; fi
+          done
+
+      - name: Install and verify
+        run: |
+          npm install --no-audit --no-fund
+          npm run typecheck
+          npm test
+          npm run build
+          npm run package:sea --workspace=@millionsnest/nestlive-production-node
+          npm run package:sea --workspace=@millionsnest/nestlive-node
+          npm run package:sea --workspace=@millionsnest/nestlive-service
+
+      - name: Import signing identities
+        shell: bash
+        run: |
+          set -euo pipefail
+          KEYCHAIN="$RUNNER_TEMP/nestlive-signing.keychain-db"
+          CERT="$RUNNER_TEMP/nestlive-signing.p12"
+          KEYCHAIN_PASSWORD="$(openssl rand -hex 24)"
+          printf '%s' "$APPLE_CERT_P12_BASE64" | base64 --decode > "$CERT"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$CERT" -k "$KEYCHAIN" -P "$APPLE_CERT_PASSWORD" -T /usr/bin/codesign -T /usr/bin/productbuild
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security list-keychains -d user -s "$KEYCHAIN" login.keychain-db
+          echo "SIGNING_KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
+          rm -f "$CERT"
+
+      - name: Build signed pkg
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="$RUNNER_TEMP/pkg-root"
+          SCRIPTS="$RUNNER_TEMP/pkg-scripts"
+          OUT="$RUNNER_TEMP/nestlive-macos"
+          APP="$ROOT/Library/Application Support/NestLive"
+          mkdir -p "$APP/web" "$APP/web-production" "$SCRIPTS" "$OUT"
+          cp packages/nestlive-service/dist/NestLiveService "$APP/"
+          cp packages/nestlive-node/dist/NestLiveAudioNode "$APP/"
+          cp packages/production-node/dist/NestLiveProductionNode "$APP/"
+          cp -R apps/live/dist/. "$APP/web/"
+          cp -R apps/production/dist/. "$APP/web-production/"
+          cp distribution/macos/pkg/com.millionsnest.nestlive.plist "$APP/"
+          cp distribution/macos/pkg/scripts/postinstall "$SCRIPTS/postinstall"
+          chmod +x "$APP"/NestLive* "$SCRIPTS/postinstall"
+
+          for exe in NestLiveService NestLiveAudioNode NestLiveProductionNode; do
+            codesign --force --options runtime --timestamp --sign "$APPLE_DEVELOPER_ID_APPLICATION" "$APP/$exe"
+            codesign --verify --strict --verbose=2 "$APP/$exe"
+          done
+
+          pkgbuild --root "$ROOT" --scripts "$SCRIPTS" --identifier "com.millionsnest.nestlive" --version "$RELEASE_VERSION" "$RUNNER_TEMP/NestLive-component.pkg"
+          productbuild --sign "$APPLE_DEVELOPER_ID_INSTALLER" --package "$RUNNER_TEMP/NestLive-component.pkg" "$OUT/NestLive.pkg"
+          pkgutil --check-signature "$OUT/NestLive.pkg"
+          echo "PACKAGE_DIR=$OUT" >> "$GITHUB_ENV"
+
+      - name: Notarize and staple
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcrun notarytool submit "$PACKAGE_DIR/NestLive.pkg" --apple-id "$APPLE_ID" --password "$APPLE_APP_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait
+          xcrun stapler staple "$PACKAGE_DIR/NestLive.pkg"
+          xcrun stapler validate "$PACKAGE_DIR/NestLive.pkg"
+          shasum -a 256 "$PACKAGE_DIR/NestLive.pkg" > "$PACKAGE_DIR/SHA256SUMS.txt"
+
+      - name: Cleanup keychain
+        if: always()
+        shell: bash
+        run: |
+          if [[ -n "${SIGNING_KEYCHAIN:-}" ]]; then security delete-keychain "$SIGNING_KEYCHAIN" || true; fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nestlive-macos-arm64-signed-${{ inputs.version }}
+          path: ${{ env.PACKAGE_DIR }}
+          if-no-files-found: error
+          retention-days: 30
