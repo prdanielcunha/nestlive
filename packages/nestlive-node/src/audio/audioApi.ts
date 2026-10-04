@@ -3,6 +3,7 @@ import type {
   AudioCommandEnvelope,
   AudioConsoleProvider
 } from '@millionsnest/nestlive-domain';
+import type { PairingManager } from '../security/pairingManager';
 import type { NestLiveAudioRuntime } from './audioRuntime';
 
 function json(
@@ -98,6 +99,7 @@ export interface AudioApiServerOptions {
   port: number;
   runtime: NestLiveAudioRuntime;
   authenticate: (token: string) => boolean | Promise<boolean>;
+  pairing?: PairingManager;
   allowedOrigins?: ReadonlySet<string>;
 }
 
@@ -153,6 +155,38 @@ export class AudioApiServer {
           status: 'online',
           now: new Date().toISOString()
         });
+        return;
+      }
+
+      if (
+        request.method === 'POST' &&
+        url.pathname === '/pairing/request' &&
+        this.options.pairing
+      ) {
+        const body = (await readJson(request, 16 * 1024)) as {
+          deviceName?: string;
+        };
+        const challenge = this.options.pairing.create(
+          String(body.deviceName ?? '')
+        );
+        json(response, 201, challenge);
+        return;
+      }
+
+      if (
+        request.method === 'POST' &&
+        url.pathname === '/pairing/complete' &&
+        this.options.pairing
+      ) {
+        const body = (await readJson(request, 16 * 1024)) as {
+          challengeId?: string;
+          pin?: string;
+        };
+        const grant = await this.options.pairing.complete({
+          challengeId: String(body.challengeId ?? ''),
+          pin: String(body.pin ?? '')
+        });
+        json(response, 200, grant);
         return;
       }
 
