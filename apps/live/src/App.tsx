@@ -9,16 +9,24 @@ import { SoundcheckView } from './SoundcheckView';
 import { createDemoFrame, demoChannels } from './demo';
 import { buildMixChannelViewModels } from './uiModel';
 import { useNestLiveAudio } from './useNestLiveAudio';
+import { NodePairingPanel } from './NodePairingPanel';
+import {
+  clearStoredNodeConnection,
+  loadStoredNodeConnection,
+  saveStoredNodeConnection
+} from './nodePairing';
+import type { NestLiveNodeConnection } from './audioNodeApiClient';
 
 type Surface = 'mix' | 'soundcheck' | 'doctor' | 'health' | 'setup';
 
-const configuredNode =
+const environmentNode: NestLiveNodeConnection | undefined =
   import.meta.env.VITE_NESTLIVE_NODE_HTTP &&
-  import.meta.env.VITE_NESTLIVE_NODE_WS &&
   import.meta.env.VITE_NESTLIVE_NODE_TOKEN
     ? {
         httpBaseUrl: import.meta.env.VITE_NESTLIVE_NODE_HTTP as string,
-        wsUrl: import.meta.env.VITE_NESTLIVE_NODE_WS as string,
+        wsUrl:
+          (import.meta.env.VITE_NESTLIVE_NODE_WS as string | undefined) ??
+          '',
         token: import.meta.env.VITE_NESTLIVE_NODE_TOKEN as string,
         providerInstanceId: import.meta.env
           .VITE_NESTLIVE_PROVIDER_ID as string | undefined
@@ -32,28 +40,45 @@ export function App() {
     createDemoFrame(1)
   );
   const [now, setNow] = useState(Date.now());
+  const [storedNode, setStoredNode] = useState<
+    NestLiveNodeConnection | undefined
+  >(() => loadStoredNodeConnection());
+  const configuredNode = environmentNode ?? storedNode;
+  const isDemo = !configuredNode && import.meta.env.DEV;
   const audio = useNestLiveAudio(configuredNode);
 
   useEffect(() => {
-    if (configuredNode) return;
+    if (!isDemo) return;
     let tick = 1;
     const meterTimer = window.setInterval(() => {
       tick += 1;
       setDemoFrame(createDemoFrame(tick));
     }, 40);
     return () => window.clearInterval(meterTimer);
-  }, []);
+  }, [isDemo]);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 250);
     return () => window.clearInterval(timer);
   }, []);
 
-  const frame = configuredNode ? audio.frame ?? demoFrame : demoFrame;
+  const disconnectedFrame: MeterFrame = {
+    providerInstanceId: 'disconnected',
+    sequence: 0,
+    capturedAt: now,
+    channels: []
+  };
+  const frame = configuredNode
+    ? audio.frame ?? disconnectedFrame
+    : isDemo
+      ? demoFrame
+      : disconnectedFrame;
   const sourceChannels =
     configuredNode && audio.channels.length > 0
       ? audio.channels
-      : demoChannels;
+      : isDemo
+        ? demoChannels
+        : [];
   const stale = now - frame.capturedAt > 750;
 
   const channels = useMemo(
@@ -70,7 +95,12 @@ export function App() {
   }, [channels, selectedId]);
 
   const capabilities = new Set(audio.provider?.capabilities ?? []);
-  const isDemo = !configuredNode;
+
+  useEffect(() => {
+    if (!configuredNode && !isDemo) {
+      setSurface('setup');
+    }
+  }, [configuredNode, isDemo]);
 
   return (
     <div className="app-shell">
@@ -118,7 +148,9 @@ export function App() {
             <small>
               {isDemo
                 ? 'preview de desenvolvimento'
-                : audio.provider?.providerInstanceId ?? audio.error ?? 'aguarde'}
+                : configuredNode
+                  ? audio.provider?.providerInstanceId ?? audio.error ?? 'aguarde'
+                  : 'conecte um computador'}
             </small>
           </div>
         </div>
@@ -128,17 +160,32 @@ export function App() {
         <header className="topbar">
           <div>
             <span className="eyebrow">
-              {isDemo ? 'AMBIENTE DE DESENVOLVIMENTO' : 'NESTLIVE NODE'}
+              {isDemo
+                ? 'AMBIENTE DE DESENVOLVIMENTO'
+                : configuredNode
+                  ? 'NESTLIVE NODE'
+                  : 'NESTLIVE'}
             </span>
             <strong>
               {audio.provider?.providerInstanceId ??
-                (isDemo ? 'Console simulada' : 'Áudio')}
+                (isDemo
+                  ? 'Console simulada'
+                  : configuredNode
+                    ? 'Áudio'
+                    : 'Conectar computador')}
             </strong>
           </div>
           <div className="topbar__status">
             <span className="pill">
-              ● {isDemo ? 'Demo' : audio.status}
+              ● {isDemo
+                ? 'Demo'
+                : configuredNode
+                  ? audio.status
+                  : 'desconectado'}
             </span>
+            <a className="pill workspace-link" href="/production/">
+              Produção
+            </a>
             {stale ? <span className="pill pill--danger">Meter stale</span> : null}
           </div>
         </header>
@@ -206,12 +253,28 @@ export function App() {
           />
         ) : null}
         {surface === 'setup' ? (
-          <GuidedSetup
-            connectedToNode={Boolean(configuredNode) && audio.status !== 'error'}
-            inspectNetwork={audio.inspectNetwork}
-            discoverX32={audio.discoverX32}
-            connectX32={audio.connectX32}
-          />
+          <>
+            <NodePairingPanel
+              connected={Boolean(configuredNode)}
+              connection={configuredNode}
+              onConnected={connection => {
+                saveStoredNodeConnection(connection);
+                setStoredNode(connection);
+              }}
+              onDisconnect={() => {
+                clearStoredNodeConnection();
+                setStoredNode(undefined);
+              }}
+            />
+            <GuidedSetup
+              connectedToNode={
+                Boolean(configuredNode) && audio.status !== 'error'
+              }
+              inspectNetwork={audio.inspectNetwork}
+              discoverX32={audio.discoverX32}
+              connectX32={audio.connectX32}
+            />
+          </>
         ) : null}
       </main>
     </div>
