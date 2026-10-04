@@ -8,12 +8,12 @@ const { inject } = require('postject');
 
 const packageRoot = resolve(import.meta.dirname, '..');
 const dist = join(packageRoot, 'dist');
-const bundle = join(dist, 'index.cjs');
+const bundle = join(dist, 'nestlive-service.cjs');
 const blob = join(dist, 'sea-prep.blob');
 const config = join(dist, 'sea-config.json');
 const executable = join(
   dist,
-  process.platform === 'win32' ? 'NestLiveProductionNode.exe' : 'NestLiveProductionNode'
+  process.platform === 'win32' ? 'NestLiveService.exe' : 'NestLiveService'
 );
 
 await mkdir(dist, { recursive: true });
@@ -33,32 +33,19 @@ execFileSync(process.execPath, ['--experimental-sea-config', config], {
   cwd: packageRoot,
   stdio: 'inherit'
 });
-
 await copyFile(process.execPath, executable);
 
 if (process.platform === 'darwin') {
-  execFileSync('codesign', ['--remove-signature', executable], {
-    stdio: 'inherit'
-  });
+  execFileSync('codesign', ['--remove-signature', executable], { stdio: 'inherit' });
 }
 
-// Use Postject's programmatic API instead of spawning `npx`.
-// This keeps the SEA injection path identical across Windows/macOS/Linux and
-// avoids Windows cmd shim/spawn semantics becoming part of the build contract.
-await inject(
-  executable,
-  'NODE_SEA_BLOB',
-  await readFile(blob),
-  {
-    sentinelFuse: 'NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2',
-    machoSegmentName: 'NODE_SEA'
-  }
-);
+await inject(executable, 'NODE_SEA_BLOB', await readFile(blob), {
+  sentinelFuse: 'NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2',
+  machoSegmentName: 'NODE_SEA'
+});
 
 if (process.platform === 'darwin') {
-  execFileSync('codesign', ['--sign', '-', executable], {
-    stdio: 'inherit'
-  });
+  execFileSync('codesign', ['--sign', '-', executable], { stdio: 'inherit' });
 }
 
 console.log(JSON.stringify({

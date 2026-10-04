@@ -9,16 +9,20 @@ interface ServiceChild {
   env: NodeJS.ProcessEnv;
 }
 
+function packagedBinary(baseName: string): string {
+  return process.platform === 'win32' ? `${baseName}.exe` : baseName;
+}
+
 function resolveEntry(
   explicit: string | undefined,
   workspaceRelative: string,
-  packagedName: string
+  packagedBaseName: string
 ): string {
   if (explicit?.trim()) return path.resolve(explicit.trim());
 
   const packaged = path.resolve(
     path.dirname(process.execPath),
-    packagedName
+    packagedBinary(packagedBaseName)
   );
   if (existsSync(packaged)) return packaged;
 
@@ -42,12 +46,12 @@ export function buildServiceChildren(
   const productionEntry = resolveEntry(
     env.NESTLIVE_PRODUCTION_ENTRY,
     'packages/production-node/dist/index.cjs',
-    'nestlive-production-node.cjs'
+    'NestLiveProductionNode'
   );
   const audioEntry = resolveEntry(
     env.NESTLIVE_AUDIO_ENTRY,
     'packages/nestlive-node/dist/nestlive-node.cjs',
-    'nestlive-audio-node.cjs'
+    'NestLiveAudioNode'
   );
 
   const productionPort =
@@ -87,9 +91,13 @@ function spawnChild(child: ServiceChild): ChildProcess {
     throw new Error(`nestlive_service_entry_missing:${child.name}:${child.entry}`);
   }
 
+  const scriptEntry = /\.(?:c?js|mjs)$/i.test(child.entry);
+  const executable = scriptEntry ? process.execPath : child.entry;
+  const args = scriptEntry ? [child.entry] : [];
+
   const processChild = spawn(
-    process.execPath,
-    [child.entry],
+    executable,
+    args,
     {
       env: child.env,
       stdio: ['ignore', 'inherit', 'inherit']
