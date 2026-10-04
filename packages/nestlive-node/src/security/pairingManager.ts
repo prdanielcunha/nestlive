@@ -1,16 +1,33 @@
 import { randomBytes, randomInt } from 'node:crypto';
-import type { AccessTokenStore } from './accessTokenStore';
+import type {
+  AccessTokenBinding,
+  AccessTokenStore
+} from './accessTokenStore';
 
 export interface PairingChallenge {
   challengeId: string;
   deviceName: string;
   expiresAt: string;
   displayedOnNode: true;
+  nodeId?: string;
+  method?: 'pin';
+}
+
+export interface PairingCreateInput {
+  deviceId?: string;
+  deviceName: string;
+  organizationId?: string;
+  venueId?: string;
+  liveSystemId?: string;
 }
 
 interface InternalChallenge extends PairingChallenge {
   pin: string;
   attempts: number;
+  deviceId?: string;
+  organizationId?: string;
+  venueId?: string;
+  liveSystemId?: string;
 }
 
 export interface LocalPairingDisplay {
@@ -24,6 +41,7 @@ export interface PairingManagerOptions {
   ttlMs?: number;
   maxAttempts?: number;
   maxConcurrent?: number;
+  nodeId?: string;
   onPin?: (input: LocalPairingDisplay) => void;
 }
 
@@ -42,9 +60,26 @@ export class PairingManager {
     this.maxConcurrent = options.maxConcurrent ?? 5;
   }
 
-  create(deviceName: string, now = new Date()): PairingChallenge {
-    const safeName = deviceName.trim().slice(0, 80);
+  create(
+    input: string | PairingCreateInput,
+    now = new Date()
+  ): PairingChallenge {
+    const request: PairingCreateInput =
+      typeof input === 'string'
+        ? { deviceName: input }
+        : input;
+    const safeName = request.deviceName.trim().slice(0, 80);
     if (!safeName) throw new Error('pairing_device_name_required');
+
+    const scope = [
+      request.organizationId,
+      request.venueId,
+      request.liveSystemId
+    ];
+    const scopeCount = scope.filter(value => Boolean(value?.trim())).length;
+    if (scopeCount !== 0 && scopeCount !== 3) {
+      throw new Error('pairing_scope_invalid');
+    }
 
     this.sweep(now);
     if (this.challenges.size >= this.maxConcurrent) {
@@ -60,8 +95,14 @@ export class PairingManager {
       deviceName: safeName,
       expiresAt,
       displayedOnNode: true,
+      nodeId: this.options.nodeId,
+      method: 'pin',
       pin,
-      attempts: 0
+      attempts: 0,
+      deviceId: request.deviceId?.trim() || undefined,
+      organizationId: request.organizationId?.trim() || undefined,
+      venueId: request.venueId?.trim() || undefined,
+      liveSystemId: request.liveSystemId?.trim() || undefined
     };
     this.challenges.set(challengeId, challenge);
     this.options.onPin?.({
@@ -75,7 +116,9 @@ export class PairingManager {
       challengeId,
       deviceName: safeName,
       expiresAt,
-      displayedOnNode: true
+      displayedOnNode: true,
+      nodeId: this.options.nodeId,
+      method: 'pin'
     };
   }
 
@@ -92,11 +135,15 @@ export class PairingManager {
   async complete(input: {
     challengeId: string;
     pin: string;
+    deviceId?: string;
+    deviceName?: string;
     now?: Date;
   }): Promise<{
     tokenId: string;
     token: string;
     deviceName: string;
+    nodeId?: string;
+    binding?: AccessTokenBinding;
   }> {
     const now = input.now ?? new Date();
     const challenge = this.challenges.get(input.challengeId);
@@ -117,13 +164,54 @@ export class PairingManager {
       throw new Error('pairing_pin_invalid');
     }
 
+    if (
+      challenge.deviceId &&
+      input.deviceId &&
+      challenge.deviceId !== input.deviceId
+    ) {
+      throw new Error('pairing_device_mismatch');
+    }
+    if (
+      input.deviceName &&
+      challenge.deviceName !== input.deviceName.trim().slice(0, 80)
+    ) {
+      throw new Error('pairing_device_mismatch');
+    }
+
     this.challenges.delete(challenge.challengeId);
-    const issued = await this.tokens.issue(challenge.deviceName);
+    const pairedAt = now.toISOString();
+    const hasScope = Boolean(
+      challenge.organizationId &&
+      challenge.venueId &&
+      challenge.liveSystemId &&
+      (challenge.deviceId || input.deviceId) &&
+      this.options.nodeId
+    );
+    const binding: AccessTokenBinding | undefined = hasScope
+      ? {
+          nodeId: this.options.nodeId!,
+          organizationId: challenge.organizationId!,
+          venueId: challenge.venueId!,
+          liveSystemId: challenge.liveSystemId!,
+          deviceId: (challenge.deviceId || input.deviceId)!,
+          deviceName: challenge.deviceName,
+          pairedAt,
+          lastSeenAt: pairedAt
+        }
+      : undefined;
+
+    const issued = await this.tokens.issue(
+      challenge.deviceName,
+      undefined,
+      binding
+    );
 
     return {
       tokenId: issued.id,
       token: issued.token,
-      deviceName: challenge.deviceName
+      deviceName: challenge.deviceName,
+      nodeId: this.options.nodeId,
+      binding
     };
   }
 

@@ -2,6 +2,17 @@ import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
+export interface AccessTokenBinding {
+  nodeId: string;
+  organizationId: string;
+  venueId: string;
+  liveSystemId: string;
+  deviceId: string;
+  deviceName: string;
+  pairedAt: string;
+  lastSeenAt: string;
+}
+
 export interface AccessTokenRecord {
   id: string;
   deviceName: string;
@@ -9,6 +20,7 @@ export interface AccessTokenRecord {
   createdAt: string;
   expiresAt?: string;
   revokedAt?: string;
+  binding?: AccessTokenBinding;
 }
 
 interface AccessTokenFile {
@@ -50,7 +62,11 @@ export class AccessTokenStore {
     }
   }
 
-  async issue(deviceName: string, ttlMs?: number): Promise<{
+  async issue(
+    deviceName: string,
+    ttlMs?: number,
+    binding?: AccessTokenBinding
+  ): Promise<{
     id: string;
     token: string;
     expiresAt?: string;
@@ -69,19 +85,23 @@ export class AccessTokenStore {
       deviceName,
       tokenHash: hashToken(token),
       createdAt: now.toISOString(),
-      expiresAt
+      expiresAt,
+      binding
     });
     await this.write(records);
 
     return { id, token, expiresAt };
   }
 
-  async authenticate(token: string, now = new Date()): Promise<boolean> {
-    if (!token) return false;
+  async authorize(
+    token: string,
+    now = new Date()
+  ): Promise<AccessTokenRecord | undefined> {
+    if (!token) return undefined;
     const candidate = hashToken(token);
     const records = await this.list();
 
-    return records.some(record => {
+    return records.find(record => {
       if (record.revokedAt) return false;
       if (
         record.expiresAt &&
@@ -91,6 +111,24 @@ export class AccessTokenStore {
       }
       return equalHex(candidate, record.tokenHash);
     });
+  }
+
+  async authenticate(token: string, now = new Date()): Promise<boolean> {
+    return Boolean(await this.authorize(token, now));
+  }
+
+  async revokeToken(token: string): Promise<boolean> {
+    const record = await this.authorize(token);
+    return record ? this.revoke(record.id) : false;
+  }
+
+  async activeCount(now = new Date()): Promise<number> {
+    const records = await this.list();
+    return records.filter(record => {
+      if (record.revokedAt) return false;
+      return !record.expiresAt ||
+        new Date(record.expiresAt).getTime() > now.getTime();
+    }).length;
   }
 
   async revoke(id: string): Promise<boolean> {

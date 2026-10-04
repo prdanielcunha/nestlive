@@ -1,9 +1,21 @@
 import http from 'node:http';
 import https from 'node:https';
 
+export interface ProductionProxyBinding {
+  nodeId: string;
+  organizationId: string;
+  venueId: string;
+  liveSystemId: string;
+  deviceId: string;
+  deviceName: string;
+}
+
 export interface ProductionProxyConfig {
   baseUrl: string;
   token: string;
+  clientToken?: string;
+  binding?: ProductionProxyBinding;
+  stripPrefix?: boolean;
 }
 
 function normalizeLoopbackBaseUrl(input: string): URL {
@@ -59,15 +71,18 @@ export async function proxyToProductionEngine(
   );
 
   const prefix = '/v1/production';
+  const shouldStrip = config.stripPrefix !== false;
   if (
+    shouldStrip &&
     incoming.pathname !== prefix &&
     !incoming.pathname.startsWith(`${prefix}/`)
   ) {
     throw new Error('production_proxy_path_invalid');
   }
 
-  const forwardedPath =
-    incoming.pathname.slice(prefix.length) || '/';
+  const forwardedPath = shouldStrip
+    ? incoming.pathname.slice(prefix.length) || '/'
+    : incoming.pathname;
   const target = new URL(
     `${forwardedPath}${incoming.search}`,
     `${base.toString().replace(/\/$/, '')}/`
@@ -78,9 +93,20 @@ export async function proxyToProductionEngine(
   await new Promise<void>((resolve, reject) => {
     const headers: http.OutgoingHttpHeaders = {
       accept: request.headers.accept ?? '*/*',
-      authorization: `Bearer ${config.token}`,
+      authorization: `Bearer ${config.clientToken || config.token}`,
       'user-agent': 'NestLive-Gateway/0.1'
     };
+
+    if (!config.clientToken && config.binding) {
+      headers['x-nestlive-node-id'] = config.binding.nodeId;
+      headers['x-nestlive-organization-id'] = config.binding.organizationId;
+      headers['x-nestlive-venue-id'] = config.binding.venueId;
+      headers['x-nestlive-system-id'] = config.binding.liveSystemId;
+      headers['x-nestlive-device-id'] = config.binding.deviceId;
+      headers['x-nestlive-device-name'] = encodeURIComponent(
+        config.binding.deviceName
+      );
+    }
 
     if (request.headers['content-type']) {
       headers['content-type'] = request.headers['content-type'];
@@ -118,4 +144,25 @@ export async function proxyToProductionEngine(
     });
     request.pipe(upstream);
   });
+}
+
+
+export async function fetchProductionEngineHealth(
+  config: Pick<ProductionProxyConfig, 'baseUrl'>
+): Promise<Record<string, unknown>> {
+  const base = normalizeLoopbackBaseUrl(config.baseUrl);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 2000);
+  try {
+    const response = await fetch(new URL('/health', base), {
+      cache: 'no-store',
+      signal: controller.signal
+    });
+    if (!response.ok) {
+      throw new Error(`production_health_http_${response.status}`);
+    }
+    return await response.json() as Record<string, unknown>;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
