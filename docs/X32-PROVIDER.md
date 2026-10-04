@@ -40,7 +40,7 @@ Isso remove a necessidade de IP manual no fluxo normal sem usar broadcast global
 - pan;
 - state reconciliation por `/xremote`.
 
-Gain, phantom, EQ, gate, compressor, routing e scene recall **não são anunciados ainda**. Eles entram somente após implementação e validação segura, mantendo a regra “nenhum botão falso”.
+Gain, phantom, EQ, gate, compressor, routing profundo e scene recall **não são anunciados ainda**. O provider anuncia apenas o subconjunto de routing que realmente lê (atribuição Main LR) e bus-send que realmente confirma. Eles entram somente após implementação e validação segura, mantendo a regra “nenhum botão falso”.
 
 ## Meter mapping
 

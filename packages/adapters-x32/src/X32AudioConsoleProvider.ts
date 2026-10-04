@@ -6,6 +6,7 @@ import type {
   AudioConsoleProvider,
   AudioConsoleState,
   AudioGroup,
+  AudioRoutingState,
   AudioStatePatch,
   AudioSubscriptionScope,
   MeterFrame,
@@ -27,10 +28,12 @@ const X32_CAPABILITIES: ReadonlySet<AudioCapability> = new Set([
   'audio.channel.read',
   'audio.bus.read',
   'audio.group.read',
+  'audio.routing.read',
   'audio.meter.read',
   'audio.fader.write',
   'audio.mute.write',
-  'audio.pan.write'
+  'audio.pan.write',
+  'audio.busSend.write'
 ]);
 
 function channelPath(index: number): string {
@@ -191,6 +194,24 @@ export class X32AudioConsoleProvider implements AudioConsoleProvider {
     return buses;
   }
 
+  async getRouting(): Promise<AudioRoutingState> {
+    const assignments = await Promise.all(
+      Array.from({ length: 32 }, async (_, offset) => {
+        const index = offset + 1;
+        const reply = await this.transport.request(
+          `${channelPath(index)}/mix/st`
+        );
+        return {
+          sourceId: `ch-${String(index).padStart(2, '0')}`,
+          targetId: 'main-lr',
+          enabled: (firstNumber(reply) ?? 0) >= 0.5
+        };
+      })
+    );
+
+    return { assignments };
+  }
+
   async getGroups(): Promise<AudioGroup[]> {
     const groups: AudioGroup[] = [];
 
@@ -280,6 +301,43 @@ export class X32AudioConsoleProvider implements AudioConsoleProvider {
     );
   }
 
+  async setBusSend(
+    channelId: string,
+    busId: string,
+    valueDb: number
+  ): Promise<AudioCommandResult> {
+    const startedAt = Date.now();
+    const channelIndex = this.parseChannelId(channelId);
+    const busMatch = /^bus-(\d{2})$/.exec(busId);
+    const busIndex = busMatch ? Number(busMatch[1]) : Number.NaN;
+
+    if (!Number.isInteger(busIndex) || busIndex < 1 || busIndex > 16) {
+      throw new Error(`invalid_x32_bus_id:${busId}`);
+    }
+
+    const address =
+      `${channelPath(channelIndex)}/mix/${String(busIndex).padStart(2, '0')}/level`;
+    const normalized = dbToX32Level(valueDb);
+
+    await this.transport.send(address, [
+      { type: 'f', value: normalized }
+    ]);
+    const reply = await this.transport.request(address);
+    const observed = x32LevelToDb(
+      firstNumber(reply) ?? normalized
+    );
+
+    return commandResult(
+      this.providerInstanceId,
+      channelId,
+      {
+        busId,
+        valueDb: observed
+      },
+      startedAt
+    );
+  }
+
   async *subscribeState(
     scope: AudioSubscriptionScope = {}
   ): AsyncIterable<AudioStatePatch> {
@@ -294,7 +352,7 @@ export class X32AudioConsoleProvider implements AudioConsoleProvider {
 
     try {
       for await (const message of this.transport.messages(scope.signal)) {
-        const channel = /^\/ch\/(\d{2})\/(mix\/(fader|on|pan)|config\/name)$/.exec(
+        const channel = /^\/ch\/(\d{2})\/(mix\/(fader|on|pan|st)|mix\/(\d{2})\/level|config\/name)$/.exec(
           message.address
         );
         if (channel) {
@@ -315,6 +373,22 @@ export class X32AudioConsoleProvider implements AudioConsoleProvider {
           } else if (leaf === 'mix/pan') {
             const value = firstNumber(message);
             if (value !== undefined) patch = { pan: value * 2 - 1 };
+          } else if (leaf === 'mix/st') {
+            const value = firstNumber(message);
+            if (value !== undefined) {
+              patch = { assignedToMain: value >= 0.5 };
+            }
+          } else if (/^mix\/\d{2}\/level$/.test(leaf)) {
+            const value = firstNumber(message);
+            if (value !== undefined) {
+              const busIndex = Number(channel[3]);
+              patch = {
+                busSend: {
+                  busId: `bus-${String(busIndex).padStart(2, '0')}`,
+                  valueDb: x32LevelToDb(value)
+                }
+              };
+            }
           } else if (leaf === 'config/name') {
             const value = firstString(message);
             if (value !== undefined) patch = { name: value.trim() };

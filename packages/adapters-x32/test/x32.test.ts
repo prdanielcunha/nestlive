@@ -92,6 +92,54 @@ describe('X32 OSC foundation', () => {
     expect(linearMeterToDb(0.5)).toBeCloseTo(-6.0206, 3);
   });
 
+  it('exposes only implemented deep capabilities', () => {
+    const provider = new X32AudioConsoleProvider({
+      providerInstanceId: 'x32-monte',
+      targetAddress: '192.168.32.2',
+      transport: new FakeTransport()
+    });
+
+    expect(provider.capabilities().has('audio.routing.read')).toBe(true);
+    expect(provider.capabilities().has('audio.busSend.write')).toBe(true);
+    expect(provider.capabilities().has('audio.phantom.write')).toBe(false);
+    expect(provider.capabilities().has('audio.gain.write')).toBe(false);
+  });
+
+  it('reads Main LR assignment without inventing deeper routing', async () => {
+    const provider = new X32AudioConsoleProvider({
+      providerInstanceId: 'x32-monte',
+      targetAddress: '192.168.32.2',
+      transport: new FakeTransport()
+    });
+
+    const routing = await provider.getRouting();
+    expect(routing.assignments).toHaveLength(32);
+    expect(routing.assignments[0]).toEqual({
+      sourceId: 'ch-01',
+      targetId: 'main-lr',
+      enabled: true
+    });
+  });
+
+  it('writes a bus send through the documented channel send address', async () => {
+    const transport = new FakeTransport();
+    const provider = new X32AudioConsoleProvider({
+      providerInstanceId: 'x32-monte',
+      targetAddress: '192.168.32.2',
+      transport
+    });
+
+    const result = await provider.setBusSend('ch-01', 'bus-03', -10);
+
+    expect(result.accepted).toBe(true);
+    expect(result.observedState?.busId).toBe('bus-03');
+    expect(
+      transport.sent.some(
+        item => item.address === '/ch/01/mix/03/level'
+      )
+    ).toBe(true);
+  });
+
   it('confirms observed fader state after writes', async () => {
     const transport = new FakeTransport();
     const provider = new X32AudioConsoleProvider({
