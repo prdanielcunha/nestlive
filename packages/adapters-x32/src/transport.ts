@@ -156,7 +156,7 @@ export class UdpX32Transport implements X32Transport {
         if (queue.length === 0) {
           await new Promise<void>(resolve => {
             wake = resolve;
-            signal?.addEventListener('abort', resolve, { once: true });
+            signal?.addEventListener('abort', () => resolve(), { once: true });
           });
         }
 
