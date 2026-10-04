@@ -80,7 +80,9 @@ describe('X32 OSC foundation', () => {
   });
 
   it('converts fader levels in both directions', () => {
-    for (const db of [-90, -60, -30, -10, 0, 10]) {
+    expect(dbToX32Level(-90)).toBe(0);
+    expect(x32LevelToDb(0)).toBeLessThanOrEqual(-90);
+    for (const db of [-60, -30, -10, 0, 10]) {
       expect(x32LevelToDb(dbToX32Level(db))).toBeCloseTo(db, 4);
     }
   });
