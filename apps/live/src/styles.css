@@ -164,3 +164,13 @@ button { color: inherit; }
   .trace-step small { display:none; }
   .trace-step>div { flex-direction:column; gap:3px; }
 }
+
+
+.control-hint { display:block; color:var(--muted); font-size:11px; margin-top:8px; line-height:1.45; }
+.capability-unavailable { color:var(--muted); font-size:12px; line-height:1.5; padding:10px 12px; border-radius:11px; background:rgba(255,255,255,.025); }
+.control-button,.safety-confirm button { min-height:44px; border-radius:12px; border:1px solid var(--border); background:rgba(255,255,255,.055); padding:0 14px; cursor:pointer; }
+.control-button--danger { border-color:rgba(232,90,104,.28)!important; background:rgba(232,90,104,.1)!important; color:#ffb2bb; }
+.safety-confirm { padding:14px; border:1px solid rgba(244,163,64,.22); background:rgba(244,163,64,.06); border-radius:14px; }
+.safety-confirm p { color:var(--muted); font-size:12px; line-height:1.5; }
+.safety-confirm>div { display:flex; gap:8px; }
+.status-dot[data-offline="true"] { background:var(--danger); box-shadow:0 0 0 5px rgba(232,90,104,.09); }

@@ -8,34 +8,69 @@ import { MixSurface } from './MixSurface';
 import { SoundcheckView } from './SoundcheckView';
 import { createDemoFrame, demoChannels } from './demo';
 import { buildMixChannelViewModels } from './uiModel';
+import { useNestLiveAudio } from './useNestLiveAudio';
 
 type Surface = 'mix' | 'soundcheck' | 'doctor' | 'health' | 'setup';
+
+const configuredNode =
+  import.meta.env.VITE_NESTLIVE_NODE_HTTP &&
+  import.meta.env.VITE_NESTLIVE_NODE_WS &&
+  import.meta.env.VITE_NESTLIVE_NODE_TOKEN
+    ? {
+        httpBaseUrl: import.meta.env.VITE_NESTLIVE_NODE_HTTP as string,
+        wsUrl: import.meta.env.VITE_NESTLIVE_NODE_WS as string,
+        token: import.meta.env.VITE_NESTLIVE_NODE_TOKEN as string,
+        providerInstanceId: import.meta.env
+          .VITE_NESTLIVE_PROVIDER_ID as string | undefined
+      }
+    : undefined;
 
 export function App() {
   const [surface, setSurface] = useState<Surface>('mix');
   const [selectedId, setSelectedId] = useState('ch-01');
-  const [frame, setFrame] = useState<MeterFrame>(() => createDemoFrame(1));
+  const [demoFrame, setDemoFrame] = useState<MeterFrame>(() =>
+    createDemoFrame(1)
+  );
   const [now, setNow] = useState(Date.now());
+  const audio = useNestLiveAudio(configuredNode);
 
   useEffect(() => {
+    if (configuredNode) return;
     let tick = 1;
     const meterTimer = window.setInterval(() => {
       tick += 1;
-      setFrame(createDemoFrame(tick));
+      setDemoFrame(createDemoFrame(tick));
     }, 40);
-    const clockTimer = window.setInterval(() => setNow(Date.now()), 250);
-    return () => {
-      window.clearInterval(meterTimer);
-      window.clearInterval(clockTimer);
-    };
+    return () => window.clearInterval(meterTimer);
   }, []);
 
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 250);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const frame = configuredNode ? audio.frame ?? demoFrame : demoFrame;
+  const sourceChannels =
+    configuredNode && audio.channels.length > 0
+      ? audio.channels
+      : demoChannels;
   const stale = now - frame.capturedAt > 750;
+
   const channels = useMemo(
-    () => buildMixChannelViewModels(demoChannels, frame),
-    [frame]
+    () => buildMixChannelViewModels(sourceChannels, frame),
+    [sourceChannels, frame]
   );
-  const selected = channels.find(channel => channel.id === selectedId);
+  const selected =
+    channels.find(channel => channel.id === selectedId) ?? channels[0];
+
+  useEffect(() => {
+    if (!channels.some(channel => channel.id === selectedId) && channels[0]) {
+      setSelectedId(channels[0].id);
+    }
+  }, [channels, selectedId]);
+
+  const capabilities = new Set(audio.provider?.capabilities ?? []);
+  const isDemo = !configuredNode;
 
   return (
     <div className="app-shell">
@@ -68,10 +103,23 @@ export function App() {
         </nav>
 
         <div className="sidebar__footer">
-          <span className="status-dot" />
+          <span
+            className="status-dot"
+            data-offline={audio.status === 'offline' || audio.status === 'error'}
+          />
           <div>
-            <strong>Simulador local</strong>
-            <small>30 fps · LAN preview</small>
+            <strong>
+              {isDemo
+                ? 'Simulador local'
+                : audio.status === 'online'
+                  ? 'Node conectado'
+                  : 'Conectando Node'}
+            </strong>
+            <small>
+              {isDemo
+                ? 'preview de desenvolvimento'
+                : audio.provider?.providerInstanceId ?? audio.error ?? 'aguarde'}
+            </small>
           </div>
         </div>
       </aside>
@@ -79,12 +127,19 @@ export function App() {
       <main className="workspace">
         <header className="topbar">
           <div>
-            <span className="eyebrow">MONTE CASTELO</span>
-            <strong>Behringer X32</strong>
+            <span className="eyebrow">
+              {isDemo ? 'AMBIENTE DE DESENVOLVIMENTO' : 'NESTLIVE NODE'}
+            </span>
+            <strong>
+              {audio.provider?.providerInstanceId ??
+                (isDemo ? 'Console simulada' : 'Áudio')}
+            </strong>
           </div>
           <div className="topbar__status">
-            <span className="pill">● Online</span>
-            <span className="pill">Simulador</span>
+            <span className="pill">
+              ● {isDemo ? 'Demo' : audio.status}
+            </span>
+            {stale ? <span className="pill pill--danger">Meter stale</span> : null}
           </div>
         </header>
 
@@ -100,7 +155,7 @@ export function App() {
               </header>
               <MixSurface
                 channels={channels}
-                selectedId={selectedId}
+                selectedId={selected?.id}
                 onSelect={setSelectedId}
                 stale={stale}
               />
@@ -124,7 +179,16 @@ export function App() {
                 </div>
               </div>
             </div>
-            <ChannelInspector channel={selected} stale={stale} />
+            <ChannelInspector
+              channel={selected}
+              stale={stale}
+              capabilities={isDemo ? new Set() : capabilities}
+              onCommand={
+                isDemo
+                  ? undefined
+                  : (command, safety) => audio.execute(command, safety)
+              }
+            />
           </div>
         ) : null}
 
@@ -137,7 +201,7 @@ export function App() {
         {surface === 'health' ? (
           <HealthCenter
             stale={stale}
-            connected
+            connected={isDemo || audio.status === 'online'}
             channelCount={channels.length}
           />
         ) : null}
