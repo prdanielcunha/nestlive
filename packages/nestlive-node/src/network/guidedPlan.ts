@@ -29,6 +29,27 @@ function chooseCloudInterface(
     .sort((a, b) => (a.metric ?? 9999) - (b.metric ?? 9999))[0];
 }
 
+function dedicatedAudioScore(item: NetworkInterface): number {
+  let score = 0;
+  if (item.type === 'usb_wifi') score -= 30;
+  else if (item.type === 'wifi') score -= 20;
+  else if (item.type === 'ethernet') score -= 5;
+  if (item.gateway.length === 0) score -= 20;
+  score += Math.min(1000, item.metric ?? 999);
+  return score;
+}
+
+function choosePreDiscoveryAudioInterface(
+  interfaces: NetworkInterface[],
+  cloud?: NetworkInterface
+): NetworkInterface | undefined {
+  return interfaces
+    .filter(item => item.status === 'online')
+    .filter(item => item.id !== cloud?.id)
+    .filter(item => item.ipv4.length > 0 && item.subnet.some(cidr => cidr.includes('.')))
+    .sort((a, b) => dedicatedAudioScore(a) - dedicatedAudioScore(b))[0];
+}
+
 function chooseAudioInterface(
   interfaces: NetworkInterface[],
   targetAddress: string
@@ -43,13 +64,12 @@ function chooseAudioInterface(
     })[0];
 }
 
-export function buildGuidedNetworkPlan(
+function commonChecks(
   interfaces: NetworkInterface[],
-  targetAddress: string
-): GuidedNetworkPlan {
+  cloud: NetworkInterface | undefined,
+  audio: NetworkInterface | undefined
+): GuidedNetworkCheck[] {
   const checks: GuidedNetworkCheck[] = [];
-  const cloud = chooseCloudInterface(interfaces);
-  const audio = chooseAudioInterface(interfaces, targetAddress);
   const conflicts = detectSubnetConflicts(interfaces);
 
   checks.push(
@@ -75,27 +95,18 @@ export function buildGuidedNetworkPlan(
           id: 'audio',
           label: 'Rede de áudio',
           severity: 'ok',
-          detail: `${audio.humanName} alcança a subnet de ${targetAddress}.`
+          detail: `${audio.humanName} está disponível como interface dedicada de áudio.`
         }
       : {
           id: 'audio',
           label: 'Rede de áudio',
           severity: 'blocked',
-          detail: `Nenhuma interface está na mesma subnet de ${targetAddress}.`,
+          detail: 'Nenhuma segunda interface de rede utilizável foi encontrada.',
           action: 'Conecte o Wi‑Fi USB ao roteador da mesa e teste novamente.'
         }
   );
 
-  if (cloud && audio && cloud.id === audio.id) {
-    checks.push({
-      id: 'isolation',
-      label: 'Isolamento',
-      severity: 'attention',
-      detail: 'Internet e mesa estão usando a mesma interface.',
-      action:
-        'O caminho recomendado usa Ethernet para internet e Wi‑Fi USB dedicado para a mesa.'
-    });
-  } else if (cloud && audio) {
+  if (cloud && audio && cloud.id !== audio.id) {
     checks.push({
       id: 'isolation',
       label: 'Isolamento',
@@ -114,12 +125,47 @@ export function buildGuidedNetworkPlan(
     });
   }
 
+  return checks;
+}
+
+export function buildPreDiscoveryNetworkPlan(
+  interfaces: NetworkInterface[]
+): GuidedNetworkPlan {
+  const cloud = chooseCloudInterface(interfaces);
+  const audio = choosePreDiscoveryAudioInterface(interfaces, cloud);
+  const checks = commonChecks(interfaces, cloud, audio);
+
   return {
     cloudInterfaceId: cloud?.id,
     audioInterfaceId: audio?.id,
     checks,
-    readyForReadOnlyProbe: Boolean(audio) && !checks.some(
-      check => check.severity === 'blocked'
-    )
+    readyForReadOnlyProbe:
+      Boolean(audio) && !checks.some(check => check.severity === 'blocked')
+  };
+}
+
+export function buildGuidedNetworkPlan(
+  interfaces: NetworkInterface[],
+  targetAddress: string
+): GuidedNetworkPlan {
+  const cloud = chooseCloudInterface(interfaces);
+  const audio = chooseAudioInterface(interfaces, targetAddress);
+  const checks = commonChecks(interfaces, cloud, audio);
+
+  const audioCheck = checks.find(check => check.id === 'audio');
+  if (audioCheck) {
+    if (audio) {
+      audioCheck.detail = `${audio.humanName} alcança a subnet de ${targetAddress}.`;
+    } else {
+      audioCheck.detail = `Nenhuma interface está na mesma subnet de ${targetAddress}.`;
+    }
+  }
+
+  return {
+    cloudInterfaceId: cloud?.id,
+    audioInterfaceId: audio?.id,
+    checks,
+    readyForReadOnlyProbe:
+      Boolean(audio) && !checks.some(check => check.severity === 'blocked')
   };
 }

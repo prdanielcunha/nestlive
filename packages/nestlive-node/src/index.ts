@@ -9,6 +9,7 @@ export * from './security/accessTokenStore';
 export * from './security/pairingManager';
 export * from './runtime/stateDir';
 export * from './remote/remoteMixAuthority';
+export * from './audio/providerConfig';
 export * from './audio/meterEngine';
 export * from './audio/meterSocket';
 export * from './audio/meterPriority';

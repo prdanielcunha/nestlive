@@ -28,6 +28,20 @@ export class NestLiveAudioRuntime {
     );
   }
 
+  hasProvider(providerInstanceId: string): boolean {
+    return this.providers.has(providerInstanceId);
+  }
+
+  async removeProvider(providerInstanceId: string): Promise<boolean> {
+    const provider = this.providers.get(providerInstanceId);
+    if (!provider) return false;
+    this.stopMeters(providerInstanceId);
+    await provider.dispose?.();
+    this.providers.delete(providerInstanceId);
+    this.meterBuffers.delete(providerInstanceId);
+    return true;
+  }
+
   getProvider(providerInstanceId: string): AudioConsoleProvider {
     const provider = this.providers.get(providerInstanceId);
     if (!provider) throw new Error('audio_provider_not_found');
@@ -172,7 +186,7 @@ export class NestLiveAudioRuntime {
   }
 
   async dispose(): Promise<void> {
-    for (const providerId of this.meterAbort.keys()) {
+    for (const providerId of [...this.meterAbort.keys()]) {
       this.stopMeters(providerId);
     }
     await Promise.all(
@@ -181,5 +195,6 @@ export class NestLiveAudioRuntime {
       )
     );
     this.providers.clear();
+    this.meterBuffers.clear();
   }
 }

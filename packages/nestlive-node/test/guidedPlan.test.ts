@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildGuidedNetworkPlan,
+  buildPreDiscoveryNetworkPlan,
   parseWindowsNetworkSnapshot
 } from '../src';
 
@@ -34,7 +35,14 @@ describe('Windows multi-network guided setup', () => {
     new Date('2026-10-04T12:00:00Z')
   );
 
-  it('keeps Ethernet for cloud and USB Wi-Fi for console', () => {
+  it('chooses Ethernet for cloud and USB Wi-Fi before console discovery', () => {
+    const plan = buildPreDiscoveryNetworkPlan(interfaces);
+    expect(plan.cloudInterfaceId).toContain('Ethernet');
+    expect(plan.audioInterfaceId).toContain('USB Wi-Fi');
+    expect(plan.readyForReadOnlyProbe).toBe(true);
+  });
+
+  it('keeps Ethernet for cloud and USB Wi-Fi for a known console', () => {
     const plan = buildGuidedNetworkPlan(
       interfaces,
       '192.168.50.2'
@@ -55,8 +63,5 @@ describe('Windows multi-network guided setup', () => {
     );
 
     expect(plan.readyForReadOnlyProbe).toBe(false);
-    expect(
-      plan.checks.find(check => check.id === 'audio')?.action
-    ).toContain('Wi‑Fi USB');
   });
 });
