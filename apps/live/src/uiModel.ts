@@ -11,7 +11,12 @@ export interface MixChannelViewModel {
   faderDb: number;
   mute: boolean;
   meterDb: number;
+  preFaderDb?: number;
+  postFaderDb?: number;
+  rmsDb?: number;
   peakDb: number;
+  gainReductionDb?: number;
+  gateOpen?: boolean;
   clip: boolean;
   meterAvailable: boolean;
 }
@@ -41,7 +46,12 @@ export function buildMixChannelViewModels(
         meter?.rmsDb ??
         meter?.preFaderDb ??
         -96,
+      preFaderDb: meter?.preFaderDb,
+      postFaderDb: meter?.postFaderDb,
+      rmsDb: meter?.rmsDb,
       peakDb: meter?.peakDb ?? -96,
+      gainReductionDb: meter?.gainReductionDb,
+      gateOpen: meter?.gateOpen,
       clip: meter?.clip ?? false,
       meterAvailable: Boolean(meter)
     };

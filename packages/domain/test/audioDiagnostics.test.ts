@@ -32,6 +32,27 @@ describe('Audio Doctor', () => {
     ).toContain('group_muted');
   });
 
+  it('keeps unavailable telemetry unknown instead of inventing silence', () => {
+    const trace = buildSignalTrace({
+      channelId: 'ch-02',
+      channelName: 'Vocal',
+      providerOnline: true,
+      telemetryStale: false
+    });
+
+    expect(trace.find(step => step.id === 'input')?.status).toBe('unknown');
+    expect(trace.find(step => step.id === 'compressor')?.status).toBe('unknown');
+    expect(trace.find(step => step.id === 'main')?.status).toBe('unknown');
+
+    const findings = diagnoseAudio({
+      channelId: 'ch-02',
+      channelName: 'Vocal',
+      providerOnline: true,
+      telemetryStale: false
+    });
+    expect(findings.map(item => item.code)).not.toContain('input_no_signal');
+  });
+
   it('marks inference explicitly in signal failure reasoning', () => {
     const findings = diagnoseAudio({
       channelId: 'ch-01',

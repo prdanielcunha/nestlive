@@ -108,7 +108,11 @@ export function diagnoseAudio(
     );
   }
 
-  if ((input.inputDb ?? -96) < -60 && !input.telemetryStale) {
+  if (
+    input.inputDb !== undefined &&
+    input.inputDb < -60 &&
+    !input.telemetryStale
+  ) {
     add(
       'input_no_signal',
       `${input.channelName}: sem sinal na entrada`,
@@ -233,9 +237,15 @@ export function buildSignalTrace(
     {
       id: 'input',
       label: 'INPUT',
-      status: signal(input.inputDb) ? 'ok' : 'silent',
+      status:
+        input.inputDb === undefined
+          ? 'unknown'
+          : signal(input.inputDb)
+            ? 'ok'
+            : 'silent',
       value: db(input.inputDb),
-      evidence: 'observed'
+      evidence:
+        input.inputDb === undefined ? 'unknown' : 'observed'
     },
     {
       id: 'gate',
@@ -259,7 +269,11 @@ export function buildSignalTrace(
       id: 'compressor',
       label: 'COMP',
       status:
-        (input.gainReductionDb ?? 0) < -18 ? 'blocked' : 'ok',
+        input.gainReductionDb === undefined
+          ? 'unknown'
+          : input.gainReductionDb < -18
+            ? 'blocked'
+            : 'ok',
       value: db(input.gainReductionDb),
       evidence:
         input.gainReductionDb === undefined ? 'unknown' : 'observed'
@@ -268,7 +282,11 @@ export function buildSignalTrace(
       id: 'fader',
       label: 'FADER',
       status:
-        (input.faderDb ?? 0) <= -60 ? 'blocked' : 'ok',
+        input.faderDb === undefined
+          ? 'unknown'
+          : input.faderDb <= -60
+            ? 'blocked'
+            : 'ok',
       value: db(input.faderDb),
       evidence:
         input.faderDb === undefined ? 'unknown' : 'observed'
@@ -277,9 +295,17 @@ export function buildSignalTrace(
       id: 'mute',
       label: 'MUTE / DCA',
       status:
-        input.muted || input.groupMuted ? 'blocked' : 'ok',
+        input.muted === undefined && input.groupMuted === undefined
+          ? 'unknown'
+          : input.muted || input.groupMuted
+            ? 'blocked'
+            : 'ok',
       value:
-        input.muted || input.groupMuted ? 'mutado' : 'aberto',
+        input.muted === undefined && input.groupMuted === undefined
+          ? undefined
+          : input.muted || input.groupMuted
+            ? 'mutado'
+            : 'aberto',
       evidence:
         input.muted === undefined && input.groupMuted === undefined
           ? 'unknown'
@@ -291,9 +317,11 @@ export function buildSignalTrace(
       status:
         input.assignedToMain === false
           ? 'blocked'
-          : signal(input.outputDb)
-            ? 'ok'
-            : 'silent',
+          : input.outputDb === undefined
+            ? 'unknown'
+            : signal(input.outputDb)
+              ? 'ok'
+              : 'silent',
       value: db(input.outputDb),
       evidence:
         input.outputDb === undefined ? 'unknown' : 'observed'

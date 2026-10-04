@@ -245,7 +245,13 @@ export function App() {
           <SoundcheckView channels={channels} stale={stale} />
         ) : null}
         {surface === 'doctor' ? (
-          <AudioDoctorPanel channel={selected} stale={stale} />
+          <AudioDoctorPanel
+            channel={selected}
+            stale={stale}
+            providerOnline={
+              isDemo || audio.status === 'online'
+            }
+          />
         ) : null}
         {surface === 'health' ? (
           <HealthCenter
