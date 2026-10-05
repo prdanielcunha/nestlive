@@ -7,6 +7,7 @@ import { SimulatedAudioConsoleProvider } from '@millionsnest/nestlive-adapter-au
 import {
   allX32DeepControlsCertified,
   discoverX32OnSubnet,
+  probeX32Reachability,
   validateX32CertificationManifest,
   X32AudioConsoleProvider
 } from '@millionsnest/nestlive-adapter-x32';
@@ -16,11 +17,14 @@ import {
   AudioProviderConfigStore,
   buildGuidedNetworkPlan,
   buildPreDiscoveryNetworkPlan,
+  classifyNetworkHealth,
+  createProviderNetworkBinding,
   defaultNestLiveStateDir,
   enumerateNetworkInterfaces,
   inspectWindowsNetworkInterfaces,
   MeterWebSocketServer,
   NestLiveAudioRuntime,
+  NetworkBindingStore,
   NestLiveDiscoveryBroadcaster,
   PairingManager,
   renderNestLiveLocalConsole,
@@ -106,6 +110,9 @@ async function main(): Promise<void> {
   const providerConfigStore = new AudioProviderConfigStore(
     path.join(STATE_DIR, 'audio-providers.json')
   );
+  const bindingStore = new NetworkBindingStore(
+    path.join(STATE_DIR, 'network-bindings.json')
+  );
   const soundcraftSpike = new SoundcraftSpikeCoordinator(
     path.join(STATE_DIR, 'certification')
   );
@@ -151,7 +158,23 @@ async function main(): Promise<void> {
   const registerX32 = async (input: {
     targetAddress: string;
     localAddress: string;
-    networkInterfaceId?: string;
+    networkInterface?: {
+      id: string;
+      macAddress?: string;
+      ipv4: string[];
+      subnet: string[];
+      status: 'online' | 'degraded' | 'offline' | 'unknown';
+      nodeId: string;
+      systemName: string;
+      humanName: string;
+      type: 'ethernet' | 'wifi' | 'usb_wifi' | 'virtual' | 'other';
+      ipv6: string[];
+      gateway: string[];
+      dns: string[];
+      purpose?: 'cloud' | 'production' | 'audio_control' | 'media' | 'custom';
+      metric?: number;
+      lastSeenAt: string;
+    };
     persist: boolean;
   }) => {
     const id = process.env.NESTLIVE_X32_ID || 'x32-primary';
@@ -192,6 +215,18 @@ async function main(): Promise<void> {
       }
     }
 
+    const networkSample = await probeX32Reachability({
+      targetAddress: input.targetAddress,
+      localAddress: input.localAddress,
+      attempts: 5,
+      timeoutMs: 450
+    });
+
+    if (!networkSample.reachable) {
+      await provider.dispose();
+      throw new Error('x32_bound_interface_unreachable');
+    }
+
     runtime.register(provider);
     providerIds.add(id);
     await runtime.startTelemetry(id, 40);
@@ -202,15 +237,33 @@ async function main(): Promise<void> {
         providerInstanceId: id,
         targetAddress: input.targetAddress,
         localAddress: input.localAddress,
-        networkInterfaceId: input.networkInterfaceId,
+        networkInterfaceId: input.networkInterface?.id,
+        networkMacAddress: input.networkInterface?.macAddress,
         updatedAt: new Date().toISOString()
       });
+
+      if (input.networkInterface) {
+        const binding = createProviderNetworkBinding({
+          providerInstanceId: id,
+          networkInterface: input.networkInterface,
+          localAddress: input.localAddress,
+          targetAddress: input.targetAddress,
+          transport: 'udp',
+          discoveryMethod: 'automatic'
+        });
+        await bindingStore.save({
+          ...binding,
+          health: classifyNetworkHealth(networkSample),
+          lastValidatedAt: networkSample.checkedAt
+        });
+      }
     }
 
     return {
       providerInstanceId: id,
       state: await provider.getConsoleState(),
-      deepControlsCertified
+      deepControlsCertified,
+      network: networkSample
     };
   };
 
@@ -232,20 +285,35 @@ async function main(): Promise<void> {
     );
     if (persisted) {
       const interfaces = await inspectNetwork();
-      const plan = buildGuidedNetworkPlan(
-        interfaces,
-        persisted.targetAddress
+      const persistedInterface = persisted.networkInterfaceId
+        ? interfaces.find(item => item.id === persisted.networkInterfaceId)
+        : undefined;
+      const samePhysicalAdapter =
+        Boolean(persistedInterface) &&
+        (!persisted.networkMacAddress ||
+          !persistedInterface?.macAddress ||
+          persistedInterface.macAddress.toLowerCase() ===
+            persisted.networkMacAddress.toLowerCase());
+      const plan = persistedInterface
+        ? buildGuidedNetworkPlan(
+            [persistedInterface],
+            persisted.targetAddress
+          )
+        : undefined;
+      const localAddress = persistedInterface?.ipv4.find(address =>
+        plan?.readyForReadOnlyProbe
       );
-      const audioInterface = interfaces.find(
-        item => item.id === plan.audioInterfaceId
-      );
-      const localAddress = audioInterface?.ipv4[0];
 
-      if (plan.readyForReadOnlyProbe && localAddress) {
+      if (
+        persistedInterface &&
+        samePhysicalAdapter &&
+        plan?.readyForReadOnlyProbe &&
+        localAddress
+      ) {
         await registerX32({
           targetAddress: persisted.targetAddress,
           localAddress,
-          networkInterfaceId: audioInterface.id,
+          networkInterface: persistedInterface,
           persist: true
         }).catch(error => {
           console.log(
@@ -255,6 +323,19 @@ async function main(): Promise<void> {
             })
           );
         });
+      } else {
+        console.log(
+          JSON.stringify({
+            event: 'x32_recovery_requires_confirmation',
+            reason: !persisted.networkInterfaceId
+              ? 'legacy_binding_without_interface'
+              : !persistedInterface
+                ? 'bound_interface_missing'
+                : !samePhysicalAdapter
+                  ? 'physical_adapter_changed'
+                  : 'bound_interface_no_longer_reaches_console'
+          })
+        );
       }
     }
   }
@@ -334,7 +415,7 @@ async function main(): Promise<void> {
       return registerX32({
         targetAddress: address,
         localAddress,
-        networkInterfaceId: audioInterface.id,
+        networkInterface: audioInterface,
         persist: true
       });
     },

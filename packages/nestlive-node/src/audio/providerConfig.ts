@@ -7,6 +7,7 @@ export interface X32PersistedConfig {
   targetAddress: string;
   localAddress: string;
   networkInterfaceId?: string;
+  networkMacAddress?: string;
   updatedAt: string;
 }
 
