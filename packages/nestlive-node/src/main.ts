@@ -3,6 +3,7 @@ import path from 'node:path';
 import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
+import type { NetworkInterface } from '@millionsnest/nestlive-domain';
 import { SimulatedAudioConsoleProvider } from '@millionsnest/nestlive-adapter-audio-sim';
 import {
   allX32DeepControlsCertified,
@@ -21,6 +22,7 @@ import {
   createProviderNetworkBinding,
   defaultNestLiveStateDir,
   enumerateNetworkInterfaces,
+  findBindingCandidates,
   inspectWindowsNetworkInterfaces,
   MeterWebSocketServer,
   NestLiveAudioRuntime,
@@ -158,23 +160,7 @@ async function main(): Promise<void> {
   const registerX32 = async (input: {
     targetAddress: string;
     localAddress: string;
-    networkInterface?: {
-      id: string;
-      macAddress?: string;
-      ipv4: string[];
-      subnet: string[];
-      status: 'online' | 'degraded' | 'offline' | 'unknown';
-      nodeId: string;
-      systemName: string;
-      humanName: string;
-      type: 'ethernet' | 'wifi' | 'usb_wifi' | 'virtual' | 'other';
-      ipv6: string[];
-      gateway: string[];
-      dns: string[];
-      purpose?: 'cloud' | 'production' | 'audio_control' | 'media' | 'custom';
-      metric?: number;
-      lastSeenAt: string;
-    };
+    networkInterface?: NetworkInterface;
     persist: boolean;
   }) => {
     const id = process.env.NESTLIVE_X32_ID || 'x32-primary';
@@ -300,9 +286,19 @@ async function main(): Promise<void> {
             persisted.targetAddress
           )
         : undefined;
-      const localAddress = persistedInterface?.ipv4.find(address =>
-        plan?.readyForReadOnlyProbe
-      );
+      const bindingCandidate = persistedInterface
+        ? findBindingCandidates(
+            [persistedInterface],
+            persisted.targetAddress
+          ).find(candidate =>
+            candidate.localAddress === persisted.localAddress
+          ) ??
+          findBindingCandidates(
+            [persistedInterface],
+            persisted.targetAddress
+          )[0]
+        : undefined;
+      const localAddress = bindingCandidate?.localAddress;
 
       if (
         persistedInterface &&
