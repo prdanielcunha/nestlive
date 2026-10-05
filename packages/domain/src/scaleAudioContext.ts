@@ -11,6 +11,7 @@ export interface AudioRoleChannelAssignment {
   id: EntityId;
   venueId: EntityId;
   roleName: string;
+  participantUserId?: EntityId;
   channelId: EntityId;
   enabled: boolean;
   note?: string;
@@ -18,7 +19,9 @@ export interface AudioRoleChannelAssignment {
 
 export interface ScaleAudioContext {
   serviceId: EntityId;
+  organizationId?: EntityId;
   venueId: EntityId;
+  liveSystemId?: EntityId;
   title: string;
   scheduledAt: string;
   participants: ScaleParticipant[];
@@ -44,21 +47,45 @@ function normalize(value: string): string {
 export function resolveScaleChannels(
   context: ScaleAudioContext
 ): ResolvedScaleChannel[] {
-  return context.assignments
-    .filter(assignment => assignment.enabled)
-    .map(assignment => {
-      const role = normalize(assignment.roleName);
-      const participant = context.participants.find(
-        candidate => normalize(candidate.roleName) === role
-      );
+  const enabled = context.assignments.filter(
+    assignment => assignment.enabled
+  );
+  const resolved: ResolvedScaleChannel[] = [];
+  const consumed = new Set<string>();
 
-      return {
-        channelId: assignment.channelId,
-        roleName: assignment.roleName,
-        participant,
-        assignmentId: assignment.id
-      };
+  for (const participant of context.participants) {
+    const participantSpecific = enabled.find(
+      assignment =>
+        assignment.participantUserId === participant.userId
+    );
+    const byRole = enabled.find(
+      assignment =>
+        !assignment.participantUserId &&
+        normalize(assignment.roleName) ===
+          normalize(participant.roleName)
+    );
+    const assignment = participantSpecific ?? byRole;
+    if (!assignment) continue;
+
+    consumed.add(assignment.id);
+    resolved.push({
+      channelId: assignment.channelId,
+      roleName: assignment.roleName,
+      participant,
+      assignmentId: assignment.id
     });
+  }
+
+  for (const assignment of enabled) {
+    if (consumed.has(assignment.id)) continue;
+    resolved.push({
+      channelId: assignment.channelId,
+      roleName: assignment.roleName,
+      assignmentId: assignment.id
+    });
+  }
+
+  return resolved;
 }
 
 export function buildSoundcheckFromScale(

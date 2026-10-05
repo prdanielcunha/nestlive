@@ -49,6 +49,35 @@ describe('scale to audio context', () => {
     });
   });
 
+  it('prefers person-specific mappings before role fallback', () => {
+    const specific: ScaleAudioContext = {
+      ...context,
+      assignments: [
+        {
+          id: 'generic-vocal',
+          venueId: 'monte',
+          roleName: 'Vocal 1',
+          channelId: 'ch-02',
+          enabled: true
+        },
+        {
+          id: 'maria-vocal',
+          venueId: 'monte',
+          roleName: 'Vocal 1',
+          participantUserId: 'u-2',
+          channelId: 'ch-05',
+          enabled: true
+        }
+      ]
+    };
+
+    expect(
+      resolveScaleChannels(specific).find(
+        item => item.participant?.userId === 'u-2'
+      )?.channelId
+    ).toBe('ch-05');
+  });
+
   it('creates a soundcheck without generating console changes', () => {
     const session = buildSoundcheckFromScale(
       context,
