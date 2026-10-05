@@ -34,7 +34,15 @@ export class BoundedOscMessageQueue {
   }
 
   push(message: OscMessage): void {
-    if (message.address.startsWith('/meters/')) {
+    const coalescable =
+      message.address.startsWith('/meters/') ||
+      message.address.startsWith('/ch/') ||
+      message.address.startsWith('/bus/') ||
+      message.address.startsWith('/dca/') ||
+      message.address.startsWith('/headamp/') ||
+      message.address.startsWith('/main/');
+
+    if (coalescable) {
       const existing = this.queue.findIndex(
         item => item.address === message.address
       );
@@ -45,11 +53,11 @@ export class BoundedOscMessageQueue {
     }
 
     if (this.queue.length >= this.maxSize) {
-      const disposableMeter = this.queue.findIndex(
-        item => item.address.startsWith('/meters/')
+      const disposableState = this.queue.findIndex(
+        item => !item.address.startsWith('/meters/')
       );
-      if (disposableMeter >= 0) {
-        this.queue.splice(disposableMeter, 1);
+      if (disposableState >= 0) {
+        this.queue.splice(disposableState, 1);
       } else {
         this.queue.shift();
       }
