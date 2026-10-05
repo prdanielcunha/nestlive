@@ -43,6 +43,8 @@ export interface ProviderNetworkBinding {
   discoveryMethod: 'automatic' | 'manual' | 'cached';
   lastValidatedAt: string;
   health: NetworkHealth;
+  latencyMs?: number;
+  packetLossPercent?: number;
 }
 
 export const AUDIO_CAPABILITIES = [

@@ -40,6 +40,8 @@ export async function validateProviderBinding(
     return {
       ...binding,
       health: 'offline',
+      latencyMs: undefined,
+      packetLossPercent: 100,
       lastValidatedAt: now.toISOString()
     };
   }
@@ -48,6 +50,8 @@ export async function validateProviderBinding(
     return {
       ...binding,
       health: 'offline',
+      latencyMs: undefined,
+      packetLossPercent: 100,
       lastValidatedAt: now.toISOString()
     };
   }
@@ -61,6 +65,8 @@ export async function validateProviderBinding(
   return {
     ...binding,
     health: classifyNetworkHealth(sample),
-    lastValidatedAt: now.toISOString()
+    latencyMs: sample.latencyMs,
+    packetLossPercent: sample.packetLossPercent,
+    lastValidatedAt: sample.checkedAt || now.toISOString()
   };
 }
