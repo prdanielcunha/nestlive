@@ -30,7 +30,7 @@ describe('meter engine one-hour logical soak', () => {
 
       // Simulate a UI consumer slower than the console without allowing
       // telemetry to become an unbounded queue.
-      if (sequence % 3 === 0) {
+      if (sequence % 3 === 0 && sequence !== frames) {
         buffer.takeLatest();
       }
     }
