@@ -31,6 +31,7 @@ import {
   PairingManager,
   renderNestLiveLocalConsole,
   renderSoundcraftSpikeConsole,
+  ScaleAudioContextStore,
   SoundcraftSpikeCoordinator,
   validateProviderBinding
 } from './index';
@@ -118,6 +119,9 @@ async function main(): Promise<void> {
   );
   const soundcraftSpike = new SoundcraftSpikeCoordinator(
     path.join(STATE_DIR, 'certification')
+  );
+  const scaleAudioContext = new ScaleAudioContextStore(
+    path.join(STATE_DIR, 'scale-audio-context.json')
   );
 
   const pairing = new PairingManager(tokenStore, {
@@ -363,6 +367,7 @@ async function main(): Promise<void> {
     revokeToken: token => tokenStore.revokeToken(token),
     activePairingCount: () => tokenStore.activeCount(),
     pairing,
+    scaleAudioContext,
     soundcraftSpike,
     soundcraftSpikeHtml: () =>
       renderSoundcraftSpikeConsole(soundcraftSpike.status()),

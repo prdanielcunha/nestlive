@@ -9,6 +9,7 @@ import type { PairingManager } from '../security/pairingManager';
 import type { AccessTokenRecord } from '../security/accessTokenStore';
 import type { GuidedNetworkPlan } from '../network/guidedPlan';
 import type { NestLiveAudioRuntime } from './audioRuntime';
+import type { ScaleAudioContextStore } from './scaleAudioContextStore';
 import {
   fetchProductionEngineHealth,
   proxyToProductionEngine,
@@ -138,6 +139,7 @@ export interface AudioApiServerOptions {
   productionProxy?: ProductionProxyConfig;
   soundcraftSpike?: SoundcraftSpikeCoordinator;
   soundcraftSpikeHtml?: () => string;
+  scaleAudioContext?: ScaleAudioContextStore;
 }
 
 export class AudioApiServer {
@@ -493,6 +495,90 @@ export class AudioApiServer {
       }
 
       if (
+        request.method === 'GET' &&
+        url.pathname === '/v1/audio/scale-context' &&
+        this.options.scaleAudioContext
+      ) {
+        json(response, 200, {
+          context: await this.options.scaleAudioContext.current()
+        });
+        return;
+      }
+
+      if (
+        request.method === 'POST' &&
+        url.pathname === '/v1/audio/scale-context' &&
+        this.options.scaleAudioContext
+      ) {
+        if (!authorizedRecord?.binding) {
+          json(response, 403, {
+            error: 'scale_audio_scoped_pairing_required'
+          });
+          return;
+        }
+
+        const body = (await readJson(request, 64 * 1024)) as {
+          serviceId?: string;
+          organizationId?: string;
+          venueId?: string;
+          liveSystemId?: string;
+          title?: string;
+          scheduledAt?: string;
+          participants?: Array<{
+            userId: string;
+            displayName: string;
+            roleName: string;
+          }>;
+        };
+
+        const context = await this.options.scaleAudioContext.saveContext(
+          authorizedRecord.binding,
+          {
+            serviceId: String(body.serviceId ?? ''),
+            organizationId:
+              String(body.organizationId ?? '').trim() || undefined,
+            venueId:
+              String(body.venueId ?? '').trim() || undefined,
+            liveSystemId:
+              String(body.liveSystemId ?? '').trim() || undefined,
+            title: String(body.title ?? ''),
+            scheduledAt: String(body.scheduledAt ?? ''),
+            participants: Array.isArray(body.participants)
+              ? body.participants
+              : []
+          }
+        );
+        json(response, 200, { context });
+        return;
+      }
+
+      if (
+        request.method === 'POST' &&
+        url.pathname === '/v1/audio/scale-context/assignments' &&
+        this.options.scaleAudioContext
+      ) {
+        const body = (await readJson(request, 16 * 1024)) as {
+          roleName?: string;
+          participantUserId?: string;
+          channelId?: string;
+          enabled?: boolean;
+        };
+        const assignment =
+          await this.options.scaleAudioContext.upsertAssignment({
+            roleName: String(body.roleName ?? ''),
+            participantUserId:
+              String(body.participantUserId ?? '').trim() || undefined,
+            channelId: String(body.channelId ?? ''),
+            enabled: body.enabled !== false
+          });
+        json(response, 200, {
+          assignment,
+          context: await this.options.scaleAudioContext.current()
+        });
+        return;
+      }
+
+            if (
         request.method === 'POST' &&
         url.pathname === '/pairing/revoke' &&
         this.options.revokeToken
