@@ -7,7 +7,8 @@ import type {
   AudioSafetyLevel,
   AudioStatePatch,
   MeterFrame,
-  NetworkInterface
+  NetworkInterface,
+  ProviderNetworkBinding
 } from '@millionsnest/nestlive-domain';
 
 export interface AudioProviderSummary {
@@ -166,6 +167,7 @@ export class NestLiveAudioApiClient {
 
   async inspectNetwork(): Promise<{
     interfaces: NetworkInterface[];
+    bindings?: ProviderNetworkBinding[];
     plan: GuidedNetworkPlan;
   }> {
     return this.request('/v1/network/plan');

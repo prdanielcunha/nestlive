@@ -28,6 +28,9 @@ export function useNestLiveAudio(
   const [channels, setChannels] = useState<AudioChannel[]>([]);
   const [frame, setFrame] = useState<MeterFrame>();
   const [error, setError] = useState<string>();
+  const [network, setNetwork] = useState<
+    Awaited<ReturnType<NestLiveAudioApiClient['inspectNetwork']>>
+  >();
   const [refreshKey, setRefreshKey] = useState(0);
   const [processingRevision, setProcessingRevision] = useState(0);
 
@@ -42,6 +45,7 @@ export function useNestLiveAudio(
     let alive = true;
     let disconnectMeter: (() => void) | undefined;
     let disconnectState: (() => void) | undefined;
+    let networkTimer: number | undefined;
     setStatus('connecting');
     setError(undefined);
 
@@ -67,6 +71,19 @@ export function useNestLiveAudio(
         const nextChannels = await api.channels(selected.providerInstanceId);
         if (!alive) return;
         setChannels(nextChannels);
+
+        const refreshNetwork = async () => {
+          try {
+            const nextNetwork = await api.inspectNetwork();
+            if (alive) setNetwork(nextNetwork);
+          } catch {
+            // Network health is supplemental; audio transport remains authoritative.
+          }
+        };
+        await refreshNetwork();
+        networkTimer = window.setInterval(() => {
+          void refreshNetwork();
+        }, 5000);
 
         disconnectMeter = api.streamMeters(
           selected.providerInstanceId,
@@ -136,6 +153,7 @@ export function useNestLiveAudio(
       alive = false;
       disconnectMeter?.();
       disconnectState?.();
+      if (networkTimer !== undefined) window.clearInterval(networkTimer);
     };
   }, [api, connection, refreshKey]);
 
@@ -202,6 +220,7 @@ export function useNestLiveAudio(
     channels,
     frame,
     error,
+    network,
     execute,
     getProcessing,
     processingRevision,

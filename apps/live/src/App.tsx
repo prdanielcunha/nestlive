@@ -341,6 +341,7 @@ export function App() {
             stale={stale}
             connected={isDemo || audio.status === 'online'}
             channelCount={channels.length}
+            network={audio.network}
           />
         ) : null}
         {surface === 'setup' ? (
