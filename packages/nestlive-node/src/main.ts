@@ -31,7 +31,8 @@ import {
   PairingManager,
   renderNestLiveLocalConsole,
   renderSoundcraftSpikeConsole,
-  SoundcraftSpikeCoordinator
+  SoundcraftSpikeCoordinator,
+  validateProviderBinding
 } from './index';
 
 const HTTP_PORT = Number(process.env.NESTLIVE_HTTP_PORT || 4317);
@@ -376,6 +377,7 @@ async function main(): Promise<void> {
       const interfaces = await inspectNetwork();
       return {
         interfaces,
+        bindings: await bindingStore.list(),
         plan: buildPreDiscoveryNetworkPlan(interfaces)
       };
     },
@@ -475,6 +477,48 @@ async function main(): Promise<void> {
     }
   }, 16);
 
+  let healthProbeRunning = false;
+  const healthProbe = setInterval(() => {
+    if (healthProbeRunning) return;
+    healthProbeRunning = true;
+
+    void (async () => {
+      try {
+        const interfaces = await inspectNetwork();
+        const bindings = await bindingStore.list();
+
+        for (const binding of bindings) {
+          if (!runtime.hasProvider(binding.providerInstanceId)) continue;
+          const networkInterface = interfaces.find(
+            item => item.id === binding.networkInterfaceId
+          );
+
+          const updated = await validateProviderBinding(
+            binding,
+            networkInterface,
+            async ({ localAddress, targetAddress, timeoutMs }) =>
+              probeX32Reachability({
+                localAddress,
+                targetAddress,
+                attempts: 4,
+                timeoutMs
+              })
+          );
+          await bindingStore.save(updated);
+        }
+      } catch (error) {
+        console.log(
+          JSON.stringify({
+            event: 'network_health_probe_failed',
+            error: error instanceof Error ? error.message : 'unknown'
+          })
+        );
+      } finally {
+        healthProbeRunning = false;
+      }
+    })();
+  }, 5000);
+
   console.log(
     JSON.stringify({
       event: 'nestlive_node_ready',
@@ -491,6 +535,7 @@ async function main(): Promise<void> {
     if (stopping) return;
     stopping = true;
     clearInterval(pump);
+    clearInterval(healthProbe);
     await discovery.stop().catch(() => undefined);
     await api.close().catch(() => undefined);
     await meters.close().catch(() => undefined);

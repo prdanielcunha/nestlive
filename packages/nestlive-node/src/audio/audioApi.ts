@@ -2,7 +2,8 @@ import http from 'node:http';
 import type {
   AudioCommandEnvelope,
   AudioConsoleProvider,
-  NetworkInterface
+  NetworkInterface,
+  ProviderNetworkBinding
 } from '@millionsnest/nestlive-domain';
 import type { PairingManager } from '../security/pairingManager';
 import type { AccessTokenRecord } from '../security/accessTokenStore';
@@ -123,6 +124,7 @@ export interface AudioApiServerOptions {
   allowedOrigins?: ReadonlySet<string>;
   inspectNetwork?: () => Promise<{
     interfaces: NetworkInterface[];
+    bindings?: ProviderNetworkBinding[];
     plan: GuidedNetworkPlan;
   }>;
   discoverX32?: () => Promise<X32DiscoveryResult[]>;
