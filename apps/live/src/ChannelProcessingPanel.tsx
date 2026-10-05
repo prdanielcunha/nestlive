@@ -409,7 +409,11 @@ export function ChannelProcessingPanel(props: {
               onClick={() =>
                 void run(
                   'gate',
-                  { type: 'setGate', channelId, gate },
+                  {
+                    type: 'setGate',
+                    channelId,
+                    gate: { ...gate }
+                  },
                   'guarded'
                 )
               }
@@ -568,7 +572,7 @@ export function ChannelProcessingPanel(props: {
                   {
                     type: 'setCompressor',
                     channelId,
-                    compressor
+                    compressor: { ...compressor }
                   },
                   'guarded'
                 )
