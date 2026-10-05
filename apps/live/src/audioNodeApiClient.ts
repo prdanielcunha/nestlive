@@ -8,7 +8,8 @@ import type {
   AudioStatePatch,
   MeterFrame,
   NetworkInterface,
-  ProviderNetworkBinding
+  ProviderNetworkBinding,
+  ScaleAudioContext
 } from '@millionsnest/nestlive-domain';
 
 export interface AudioProviderSummary {
@@ -369,6 +370,28 @@ export class NestLiveAudioApiClient {
       `/v1/audio/providers/${encodeURIComponent(providerInstanceId)}/channels`
     );
     return body.channels;
+  }
+
+  async scaleAudioContext(): Promise<ScaleAudioContext | undefined> {
+    const body = await this.request<{
+      context?: ScaleAudioContext;
+    }>('/v1/audio/scale-context');
+    return body.context;
+  }
+
+  async assignScaleChannel(input: {
+    roleName: string;
+    participantUserId?: string;
+    channelId: string;
+    enabled?: boolean;
+  }): Promise<ScaleAudioContext | undefined> {
+    const body = await this.request<{
+      context?: ScaleAudioContext;
+    }>('/v1/audio/scale-context/assignments', {
+      method: 'POST',
+      body: JSON.stringify(input)
+    });
+    return body.context;
   }
 
   async channelProcessing(

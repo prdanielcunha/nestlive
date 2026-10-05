@@ -312,7 +312,16 @@ export function App() {
         ) : null}
 
         {surface === 'soundcheck' ? (
-          <SoundcheckView channels={channels} stale={stale} />
+          <SoundcheckView
+            channels={channels}
+            stale={stale}
+            scaleContext={audio.scaleContext}
+            onAssignChannel={
+              isDemo
+                ? undefined
+                : input => audio.assignScaleChannel(input)
+            }
+          />
         ) : null}
         {surface === 'doctor' ? (
           <AudioDoctorPanel

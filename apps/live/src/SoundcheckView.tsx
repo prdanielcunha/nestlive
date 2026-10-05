@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { ResolvedScaleChannel } from '@millionsnest/nestlive-domain';
+import {
+  resolveScaleChannels,
+  type ScaleAudioContext
+} from '@millionsnest/nestlive-domain';
 import type { MixChannelViewModel } from './uiModel';
 import { MeterBar } from './MeterBar';
 
@@ -14,18 +17,42 @@ interface SoundcheckState {
 export function SoundcheckView(props: {
   channels: MixChannelViewModel[];
   stale: boolean;
-  scaleContext?: ResolvedScaleChannel[];
+  scaleContext?: ScaleAudioContext;
+  onAssignChannel?: (input: {
+    roleName: string;
+    participantUserId?: string;
+    channelId: string;
+  }) => Promise<unknown>;
 }) {
   const [stateByChannel, setStateByChannel] = useState<
     Record<string, SoundcheckState>
   >({});
+  const [mappingBusy, setMappingBusy] = useState<string>();
+
+  const resolvedScale = useMemo(
+    () =>
+      props.scaleContext
+        ? resolveScaleChannels(props.scaleContext)
+        : [],
+    [props.scaleContext]
+  );
 
   const scaleByChannel = useMemo(
     () =>
       new Map(
-        (props.scaleContext ?? []).map(item => [item.channelId, item])
+        resolvedScale.map(item => [item.channelId, item])
       ),
-    [props.scaleContext]
+    [resolvedScale]
+  );
+
+  const mappedByUser = useMemo(
+    () =>
+      new Map(
+        resolvedScale
+          .filter(item => item.participant)
+          .map(item => [item.participant!.userId, item])
+      ),
+    [resolvedScale]
   );
 
   useEffect(() => {
@@ -41,7 +68,8 @@ export function SoundcheckView(props: {
           previous.peakDb === undefined
             ? channel.peakDb
             : Math.max(previous.peakDb, channel.peakDb);
-        const clippedNow = channel.clip && previous.peakDb !== channel.peakDb;
+        const clippedNow =
+          channel.clip && previous.peakDb !== channel.peakDb;
 
         next[channel.id] = {
           ...previous,
@@ -81,6 +109,23 @@ export function SoundcheckView(props: {
     channel => stateByChannel[channel.id]?.state === 'checked'
   ).length;
 
+  const assign = async (
+    participant: ScaleAudioContext['participants'][number],
+    channelId: string
+  ) => {
+    if (!channelId || !props.onAssignChannel) return;
+    setMappingBusy(participant.userId);
+    try {
+      await props.onAssignChannel({
+        roleName: participant.roleName,
+        participantUserId: participant.userId,
+        channelId
+      });
+    } finally {
+      setMappingBusy(undefined);
+    }
+  };
+
   return (
     <section className="soundcheck">
       <header className="section-heading">
@@ -92,6 +137,62 @@ export function SoundcheckView(props: {
           {checked}/{props.channels.length} checados
         </span>
       </header>
+
+      {props.scaleContext?.participants.length ? (
+        <section className="scale-channel-map">
+          <header>
+            <div>
+              <span className="eyebrow">ESCALA ATUAL</span>
+              <strong>{props.scaleContext.title}</strong>
+            </div>
+            <span className="pill">
+              {mappedByUser.size}/{props.scaleContext.participants.length}{' '}
+              mapeados
+            </span>
+          </header>
+
+          <div className="scale-channel-map__grid">
+            {props.scaleContext.participants.map(participant => {
+              const mapped = mappedByUser.get(participant.userId);
+              return (
+                <label
+                  className="scale-channel-map__row"
+                  key={participant.userId}
+                >
+                  <div>
+                    <strong>{participant.displayName}</strong>
+                    <small>{participant.roleName}</small>
+                  </div>
+                  <select
+                    value={mapped?.channelId ?? ''}
+                    disabled={
+                      !props.onAssignChannel ||
+                      mappingBusy === participant.userId
+                    }
+                    onChange={event =>
+                      void assign(participant, event.target.value)
+                    }
+                    aria-label={`Canal de ${participant.displayName}`}
+                  >
+                    <option value="">Definir canal</option>
+                    {props.channels.map(channel => (
+                      <option key={channel.id} value={channel.id}>
+                        CH {String(channel.index).padStart(2, '0')} ·{' '}
+                        {channel.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              );
+            })}
+          </div>
+
+          <p>
+            Esse vínculo serve para contexto e soundcheck. Trocar uma pessoa
+            na escala nunca altera gain, roteamento, EQ ou phantom.
+          </p>
+        </section>
+      ) : null}
 
       <div className="soundcheck__list">
         {props.channels.map(channel => {

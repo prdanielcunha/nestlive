@@ -4,7 +4,8 @@ import type {
   AudioChannelProcessingState,
   AudioControlCommand,
   AudioSafetyLevel,
-  MeterFrame
+  MeterFrame,
+  ScaleAudioContext
 } from '@millionsnest/nestlive-domain';
 import {
   NestLiveAudioApiClient,
@@ -31,6 +32,8 @@ export function useNestLiveAudio(
   const [network, setNetwork] = useState<
     Awaited<ReturnType<NestLiveAudioApiClient['inspectNetwork']>>
   >();
+  const [scaleContext, setScaleContext] =
+    useState<ScaleAudioContext>();
   const [refreshKey, setRefreshKey] = useState(0);
   const [processingRevision, setProcessingRevision] = useState(0);
 
@@ -72,17 +75,24 @@ export function useNestLiveAudio(
         if (!alive) return;
         setChannels(nextChannels);
 
-        const refreshNetwork = async () => {
-          try {
-            const nextNetwork = await api.inspectNetwork();
-            if (alive) setNetwork(nextNetwork);
-          } catch {
-            // Network health is supplemental; audio transport remains authoritative.
+        const refreshSupplemental = async () => {
+          const [networkResult, scaleResult] =
+            await Promise.allSettled([
+              api.inspectNetwork(),
+              api.scaleAudioContext()
+            ]);
+
+          if (!alive) return;
+          if (networkResult.status === 'fulfilled') {
+            setNetwork(networkResult.value);
+          }
+          if (scaleResult.status === 'fulfilled') {
+            setScaleContext(scaleResult.value);
           }
         };
-        await refreshNetwork();
+        await refreshSupplemental();
         networkTimer = window.setInterval(() => {
-          void refreshNetwork();
+          void refreshSupplemental();
         }, 5000);
 
         disconnectMeter = api.streamMeters(
@@ -203,6 +213,21 @@ export function useNestLiveAudio(
     [api, provider]
   );
 
+  const assignScaleChannel = useCallback(
+    async (input: {
+      roleName: string;
+      participantUserId?: string;
+      channelId: string;
+      enabled?: boolean;
+    }) => {
+      if (!api) throw new Error('audio_not_connected');
+      const next = await api.assignScaleChannel(input);
+      setScaleContext(next);
+      return next;
+    },
+    [api]
+  );
+
   const getProcessing = useCallback(
     async (channelId: string): Promise<AudioChannelProcessingState> => {
       if (!api || !provider) throw new Error('audio_not_connected');
@@ -221,6 +246,8 @@ export function useNestLiveAudio(
     frame,
     error,
     network,
+    scaleContext,
+    assignScaleChannel,
     execute,
     getProcessing,
     processingRevision,
