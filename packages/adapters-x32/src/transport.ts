@@ -24,6 +24,53 @@ interface PendingRequest {
   timer: ReturnType<typeof setTimeout>;
 }
 
+export class BoundedOscMessageQueue {
+  private readonly queue: OscMessage[] = [];
+
+  constructor(private readonly maxSize = 512) {
+    if (!Number.isInteger(maxSize) || maxSize < 8) {
+      throw new Error('x32_message_queue_size_invalid');
+    }
+  }
+
+  push(message: OscMessage): void {
+    if (message.address.startsWith('/meters/')) {
+      const existing = this.queue.findIndex(
+        item => item.address === message.address
+      );
+      if (existing >= 0) {
+        this.queue[existing] = message;
+        return;
+      }
+    }
+
+    if (this.queue.length >= this.maxSize) {
+      const disposableMeter = this.queue.findIndex(
+        item => item.address.startsWith('/meters/')
+      );
+      if (disposableMeter >= 0) {
+        this.queue.splice(disposableMeter, 1);
+      } else {
+        this.queue.shift();
+      }
+    }
+
+    this.queue.push(message);
+  }
+
+  shift(): OscMessage | undefined {
+    return this.queue.shift();
+  }
+
+  get length(): number {
+    return this.queue.length;
+  }
+
+  snapshot(): OscMessage[] {
+    return [...this.queue];
+  }
+}
+
 export interface UdpX32TransportOptions {
   targetAddress: string;
   targetPort?: number;
@@ -140,7 +187,7 @@ export class UdpX32Transport implements X32Transport {
 
   async *messages(signal?: AbortSignal): AsyncIterable<OscMessage> {
     await this.start();
-    const queue: OscMessage[] = [];
+    const queue = new BoundedOscMessageQueue();
     let wake: (() => void) | undefined;
 
     const listener = (message: OscMessage) => {

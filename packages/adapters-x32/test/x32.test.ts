@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  BoundedOscMessageQueue,
   X32AudioConsoleProvider,
   dbToX32Level,
   decodeOscMessage,
@@ -88,6 +89,34 @@ describe('X32 OSC foundation', () => {
     view.setFloat32(8, 0.5, true);
 
     expect(decodeX32MeterBlob(bytes)).toEqual([1, 0.5]);
+  });
+
+  it('bounds OSC telemetry queues and keeps the newest meter frame', () => {
+    const queue = new BoundedOscMessageQueue(8);
+
+    for (let sequence = 1; sequence <= 100; sequence += 1) {
+      queue.push({
+        address: '/meters/1',
+        args: [{ type: 'i', value: sequence }]
+      });
+      if (sequence % 10 === 0) {
+        queue.push({
+          address: '/ch/01/mix/fader',
+          args: [{ type: 'f', value: sequence / 100 }]
+        });
+      }
+    }
+
+    expect(queue.length).toBeLessThanOrEqual(8);
+    const latestMeter = queue
+      .snapshot()
+      .find(item => item.address === '/meters/1');
+    expect(latestMeter?.args[0]).toEqual({ type: 'i', value: 100 });
+    expect(
+      queue.snapshot().some(
+        item => item.address === '/ch/01/mix/fader'
+      )
+    ).toBe(true);
   });
 
   it('converts fader levels in both directions', () => {
