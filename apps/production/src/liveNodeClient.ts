@@ -1,3 +1,4 @@
+import type { ScaleAudioContext } from '@millionsnest/nestlive-domain';
 import type {
   AudioProfile,
   CommandResult,
@@ -413,6 +414,21 @@ export async function loadNodeState(
   return requestJson<LiveNodeStateResponse>(baseUrl, '/state', {
     headers: { Authorization: `Bearer ${token}` }
   });
+}
+
+export async function saveNodeScaleAudioContext(
+  baseUrl: string,
+  token: string,
+  context: Omit<ScaleAudioContext, 'assignments'>
+): Promise<ScaleAudioContext> {
+  const response = await requestJson<{
+    context: ScaleAudioContext;
+  }>(baseUrl, '/v1/audio/scale-context', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(context)
+  }, 5000);
+  return response.context;
 }
 
 export async function listNodeEvents(

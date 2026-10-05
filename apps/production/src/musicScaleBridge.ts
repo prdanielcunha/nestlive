@@ -25,6 +25,12 @@ export interface SharedContext {
   organizations: SharedOrganization[];
 }
 
+export interface SharedScaleParticipant {
+  userId: string;
+  displayName: string;
+  roleName: string;
+}
+
 export interface SharedScaleSong {
   id: string;
   title: string;
@@ -54,6 +60,7 @@ export interface SharedScale {
   durationMinutes?: number;
   songIds: string[];
   songs: SharedScaleSong[];
+  participants?: SharedScaleParticipant[];
 }
 
 export type ScaleOperationalState = 'live' | 'upcoming' | 'recent' | 'past';
@@ -246,16 +253,36 @@ export async function loadOrganizationScales(
   organization: SharedOrganization
 ): Promise<SharedScale[]> {
   const organizationId = organization.id;
-  const [scaleSnap, songSnap, eventNamesSnap, locationsSnap] = await Promise.all([
+  const [
+    scaleSnap,
+    songSnap,
+    eventNamesSnap,
+    locationsSnap,
+    bandScaleSnap,
+    instrumentSnap,
+    memberSnap
+  ] = await Promise.all([
     getDocs(query(collection(db, 'scales'), where('organizationId', '==', organizationId))),
     getDocs(query(collection(db, 'songs'), where('organizationId', '==', organizationId))),
     getDocs(query(collection(db, 'eventNames'), where('organizationId', '==', organizationId))),
-    getDocs(query(collection(db, 'locations'), where('organizationId', '==', organizationId)))
+    getDocs(query(collection(db, 'locations'), where('organizationId', '==', organizationId))),
+    getDocs(query(collection(db, 'bandScales'), where('organizationId', '==', organizationId))).catch(() => null),
+    getDocs(query(collection(db, 'instruments'), where('organizationId', '==', organizationId))).catch(() => null),
+    getDocs(collection(db, 'organizations', organizationId, 'members')).catch(() => null)
   ]);
 
   const songsById = new Map(songSnap.docs.map(item => [item.id, item.data()]));
   const eventNamesById = new Map(eventNamesSnap.docs.map(item => [item.id, item.data()]));
   const locationsById = new Map(locationsSnap.docs.map(item => [item.id, item.data()]));
+  const bandScalesById = new Map(
+    (bandScaleSnap?.docs ?? []).map(item => [item.id, item.data()])
+  );
+  const instrumentsById = new Map(
+    (instrumentSnap?.docs ?? []).map(item => [item.id, item.data()])
+  );
+  const membersById = new Map(
+    (memberSnap?.docs ?? []).map(item => [item.id, item.data()])
+  );
 
   return scaleSnap.docs
     .map(item => ({ id: item.id, ...item.data() } as Record<string, any>))
@@ -291,6 +318,47 @@ export async function loadOrganizationScales(
           item.plannedDurationMinutes
         ),
         songIds,
+        participants: (() => {
+          const bandScaleId =
+            typeof item.bandScaleId === 'string'
+              ? item.bandScaleId
+              : '';
+          const bandScale = bandScalesById.get(bandScaleId);
+          const assignments = Array.isArray(bandScale?.assignments)
+            ? bandScale.assignments
+            : [];
+
+          return assignments
+            .map((assignment: any) => {
+              const userId = String(assignment?.userId || '').trim();
+              const instrumentId = String(
+                assignment?.instrumentId || ''
+              ).trim();
+              if (!userId || !instrumentId) return null;
+
+              const member = membersById.get(userId) || {};
+              const instrument = instrumentsById.get(instrumentId) || {};
+              return {
+                userId,
+                displayName: String(
+                  member.displayName ||
+                    member.name ||
+                    member.email ||
+                    'Integrante'
+                ),
+                roleName: String(
+                  instrument.name ||
+                    member.ministryFunction ||
+                    'Músico'
+                )
+              } satisfies SharedScaleParticipant;
+            })
+            .filter(
+              (participant: SharedScaleParticipant | null):
+                participant is SharedScaleParticipant =>
+                  participant !== null
+            );
+        })(),
         songs: songIds.map((id: string) => {
           const song = songsById.get(id) || {};
           const settings = item.songSettings?.[id] || {};

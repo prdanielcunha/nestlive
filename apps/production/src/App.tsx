@@ -15,7 +15,10 @@ import {
   type SharedScale
 } from './musicScaleBridge';
 import { LiveCueCoordinatorProvider } from './LiveCueCoordinator';
-import { detectSameOriginLiveNode } from './liveNodeClient';
+import {
+  detectSameOriginLiveNode,
+  saveNodeScaleAudioContext
+} from './liveNodeClient';
 import { markLiveMetric } from './telemetry';
 import { useLiveNode } from './useLiveNode';
 import { useLiveFocus } from './useLiveFocus';
@@ -131,6 +134,7 @@ export function App() {
   const [selectedScaleId, setSelectedScaleId] = useState<string | null>(null);
   const [clockNow, setClockNow] = useState(() => Date.now());
   const autoCacheSignature = useRef<string | null>(null);
+  const audioScaleSignature = useRef<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [localNodeOrigin, setLocalNodeOrigin] = useState(false);
   const [localNodeDetectionDone, setLocalNodeDetectionDone] = useState(false);
@@ -301,6 +305,66 @@ export function App() {
     liveNode.credential?.binding.venueId,
     liveNode.nodeState?.state.providerLinks,
     liveNode.nodeState?.state.servicePlan,
+    liveNode.state,
+    nodeScale
+  ]);
+
+
+  useEffect(() => {
+    const credential = liveNode.credential;
+    const binding = credential?.binding;
+    if (
+      liveNode.state !== 'connected' ||
+      !credential ||
+      !binding ||
+      !nodeScale
+    ) {
+      return;
+    }
+
+    const participants = nodeScale.participants ?? [];
+    const signature = [
+      binding.organizationId,
+      binding.venueId,
+      binding.liveSystemId,
+      nodeScale.id,
+      nodeScale.publishRevision || 1,
+      ...participants.map(
+        item => `${item.userId}:${item.roleName}`
+      )
+    ].join('|');
+
+    if (audioScaleSignature.current === signature) return;
+    audioScaleSignature.current = signature;
+
+    const rawTime = nodeScale.time?.trim() || '00:00';
+    const scheduledAt =
+      `${nodeScale.date}T${/^\d{1,2}:\d{2}:\d{2}$/.test(rawTime)
+        ? rawTime
+        : `${rawTime}:00`}`;
+
+    void saveNodeScaleAudioContext(
+      credential.baseUrl,
+      credential.token,
+      {
+        serviceId: nodeScale.id,
+        organizationId: binding.organizationId,
+        venueId: binding.venueId,
+        liveSystemId: binding.liveSystemId,
+        title:
+          nodeScale.eventName ||
+          nodeScale.locationName ||
+          'Escala MusicScale',
+        scheduledAt,
+        participants
+      }
+    ).catch(() => {
+      if (audioScaleSignature.current === signature) {
+        audioScaleSignature.current = null;
+      }
+    });
+  }, [
+    liveNode.credential,
     liveNode.state,
     nodeScale
   ]);

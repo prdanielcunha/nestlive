@@ -19,7 +19,8 @@
     "react-dom": "^19.2.0",
     "react-i18next": "^17.0.8",
     "vite": "^6.2.0",
-    "vite-plugin-pwa": "^1.3.0"
+    "vite-plugin-pwa": "^1.3.0",
+    "@millionsnest/nestlive-domain": "0.1.0"
   },
   "devDependencies": {
     "@types/react": "^19.0.0",
