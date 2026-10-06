@@ -1,4 +1,4 @@
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { RemoteRelayScope } from '@millionsnest/nestlive-domain';
 
@@ -51,16 +51,6 @@ export class RemoteRelayConfigStore {
   }
 
   async clear(): Promise<void> {
-    await this.save({
-      relayUrl: '',
-      nodeTicket: '',
-      scope: {
-        nodeId: '',
-        organizationId: '',
-        venueId: '',
-        liveSystemId: ''
-      },
-      configuredAt: new Date().toISOString()
-    }).catch(() => undefined);
+    await rm(this.filePath, { force: true });
   }
 }

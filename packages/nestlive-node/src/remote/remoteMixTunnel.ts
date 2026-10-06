@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import { WebSocket } from 'ws';
 import {
   canUseRemoteCapability,
@@ -66,6 +65,7 @@ export class RemoteMixTunnelClient {
   private meterTimer?: NodeJS.Timeout;
   private stopped = true;
   private sessions = new Map<string, RemoteSession>();
+  private lastMeterKey?: string;
   private currentStatus: RemoteMixTunnelStatus = {
     state: 'disabled',
     sessions: 0
@@ -324,8 +324,11 @@ export class RemoteMixTunnelClient {
       }
       const providerId = this.selectMeterProvider();
       if (!providerId || !this.runtime.hasProvider(providerId)) return;
-      const frame = this.runtime.takeLatestMeter(providerId);
+      const frame = this.runtime.latestMeter(providerId);
       if (!frame) return;
+      const frameKey = `${providerId}:${frame.sequence}`;
+      if (frameKey === this.lastMeterKey) return;
+      this.lastMeterKey = frameKey;
 
       const now = Date.now();
       for (const [clientId, session] of this.sessions) {

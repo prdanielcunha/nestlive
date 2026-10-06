@@ -41,6 +41,34 @@ export interface IssuedRemoteMixGrant {
   token: string;
 }
 
+const ROLE_PERMISSIONS: Record<
+  RemoteMixGrant['role'],
+  ReadonlySet<RemoteMixGrant['permissions'][number]>
+> = {
+  viewer: new Set(['audio.read']),
+  operator: new Set([
+    'audio.read',
+    'audio.fader.write',
+    'audio.mute.write',
+    'audio.guarded.write'
+  ]),
+  technical_admin: new Set([
+    'audio.read',
+    'audio.fader.write',
+    'audio.mute.write',
+    'audio.guarded.write',
+    'audio.critical.write'
+  ])
+};
+
+function required(value: string, label: string): string {
+  const next = String(value ?? '').trim();
+  if (!next || next.length > 256) {
+    throw new Error(`remote_grant_${label}_invalid`);
+  }
+  return next;
+}
+
 export class RemoteMixAuthority {
   constructor(private readonly filePath: string) {}
 
@@ -52,15 +80,25 @@ export class RemoteMixAuthority {
       1,
       Math.min(240, Math.floor(request.ttlMinutes ?? 60))
     );
+    const allowed = ROLE_PERMISSIONS[request.role];
+    if (!allowed) throw new Error('remote_grant_role_invalid');
+    const permissions = [...new Set(request.permissions)];
+    if (
+      permissions.length === 0 ||
+      permissions.some(permission => !allowed.has(permission))
+    ) {
+      throw new Error('remote_grant_permission_not_allowed_for_role');
+    }
+
     const token = randomBytes(32).toString('base64url');
     const grant: RemoteMixGrant = {
       id: randomBytes(12).toString('hex'),
-      organizationId: request.organizationId,
-      venueId: request.venueId,
-      liveSystemId: request.liveSystemId,
-      actorId: request.actorId,
+      organizationId: required(request.organizationId, 'organization'),
+      venueId: required(request.venueId, 'venue'),
+      liveSystemId: required(request.liveSystemId, 'live_system'),
+      actorId: required(request.actorId, 'actor'),
       role: request.role,
-      permissions: [...new Set(request.permissions)],
+      permissions,
       issuedAt: now.toISOString(),
       expiresAt: new Date(
         now.getTime() + ttlMinutes * 60_000
@@ -71,6 +109,23 @@ export class RemoteMixAuthority {
     current.push({ grant, tokenHash: hash(token) });
     await this.write(current);
     return { grant, token };
+  }
+
+  async list(
+    options: { includeExpired?: boolean } = {},
+    now = new Date()
+  ): Promise<RemoteMixGrant[]> {
+    return (await this.read())
+      .map(item => item.grant)
+      .filter(grant => {
+        if (options.includeExpired) return true;
+        if (grant.revokedAt) return false;
+        return new Date(grant.expiresAt).getTime() > now.getTime();
+      })
+      .map(grant => ({
+        ...grant,
+        permissions: [...grant.permissions]
+      }));
   }
 
   async authenticate(
