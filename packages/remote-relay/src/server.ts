@@ -442,6 +442,7 @@ export class RemoteRelayServer {
     }
 
     if (
+      message.type === 'node.snapshot-result' ||
       message.type === 'node.command-result' ||
       message.type === 'node.meter' ||
       message.type === 'node.pong'
@@ -450,7 +451,14 @@ export class RemoteRelayServer {
       if (!client || client.nodeId !== nodeId) return;
       const socket = client.socket as WebSocket;
 
-      if (message.type === 'node.command-result') {
+      if (message.type === 'node.snapshot-result') {
+        send(socket, {
+          type: 'relay.snapshot-result',
+          requestId: message.requestId,
+          snapshot: message.snapshot,
+          error: message.error
+        });
+      } else if (message.type === 'node.command-result') {
         send(socket, {
           type: 'relay.command-result',
           requestId: message.requestId,
@@ -484,6 +492,23 @@ export class RemoteRelayServer {
     }
     const target = this.registry.node(client.nodeId);
     if (!target) throw new Error('node_offline');
+
+    if (message.type === 'client.snapshot') {
+      if (!client.grant.permissions.includes('audio.read')) {
+        send(client.socket as WebSocket, {
+          type: 'relay.snapshot-result',
+          requestId: message.requestId,
+          error: 'remote_permission_denied'
+        });
+        return;
+      }
+      send(target.socket as WebSocket, {
+        type: 'relay.snapshot',
+        clientId,
+        requestId: message.requestId
+      });
+      return;
+    }
 
     if (message.type === 'client.command') {
       if (message.envelope.actorId !== client.identity.uid) {

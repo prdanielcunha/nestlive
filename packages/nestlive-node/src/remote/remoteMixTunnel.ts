@@ -245,6 +245,63 @@ export class RemoteMixTunnelClient {
       return;
     }
 
+    if (message.type === 'relay.snapshot') {
+      const session = this.sessions.get(message.clientId);
+      if (!session?.grant.permissions.includes('audio.read')) {
+        this.send({
+          type: 'node.snapshot-result',
+          clientId: message.clientId,
+          requestId: message.requestId,
+          error: 'remote_permission_denied'
+        });
+        return;
+      }
+
+      const providerInstanceId = this.selectMeterProvider();
+      if (
+        !providerInstanceId ||
+        !this.runtime.hasProvider(providerInstanceId)
+      ) {
+        this.send({
+          type: 'node.snapshot-result',
+          clientId: message.clientId,
+          requestId: message.requestId,
+          error: 'audio_provider_offline'
+        });
+        return;
+      }
+
+      try {
+        const provider = this.runtime.getProvider(providerInstanceId);
+        const [state, channels] = await Promise.all([
+          provider.getConsoleState(),
+          provider.getChannels()
+        ]);
+        this.send({
+          type: 'node.snapshot-result',
+          clientId: message.clientId,
+          requestId: message.requestId,
+          snapshot: {
+            providerInstanceId,
+            capabilities: [...provider.capabilities()],
+            state,
+            channels
+          }
+        });
+      } catch (error) {
+        this.send({
+          type: 'node.snapshot-result',
+          clientId: message.clientId,
+          requestId: message.requestId,
+          error:
+            error instanceof Error
+              ? error.message
+              : 'remote_snapshot_failed'
+        });
+      }
+      return;
+    }
+
     if (message.type === 'relay.command') {
       const session = this.sessions.get(message.clientId);
       if (!session) {
