@@ -14,6 +14,7 @@ import { createDemoFrame, demoChannels } from './demo';
 import { buildMixChannelViewModels } from './uiModel';
 import { useNestLiveAudio } from './useNestLiveAudio';
 import { NodePairingPanel } from './NodePairingPanel';
+import { RemoteMixAdmin } from './RemoteMixAdmin';
 import {
   clearStoredNodeConnection,
   loadStoredNodeConnection,
@@ -27,6 +28,7 @@ type Surface =
   | 'doctor'
   | 'scenes'
   | 'health'
+  | 'remote'
   | 'setup';
 
 const environmentNode: NestLiveNodeConnection | undefined =
@@ -183,6 +185,7 @@ export function App() {
             ['doctor', 'Audio Doctor'],
             ['scenes', 'Cenas'],
             ['health', 'Health'],
+            ['remote', 'Remote Mix'],
             ['setup', 'Configurar']
           ] as const).map(([id, label]) => (
             <button
@@ -353,6 +356,13 @@ export function App() {
             network={audio.network}
           />
         ) : null}
+        {surface === 'remote' ? (
+          <RemoteMixAdmin
+            api={audio.api}
+            connected={Boolean(configuredNode) && audio.status === 'online'}
+          />
+        ) : null}
+
         {surface === 'setup' ? (
           <>
             <NodePairingPanel

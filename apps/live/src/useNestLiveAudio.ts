@@ -240,6 +240,7 @@ export function useNestLiveAudio(
   );
 
   return {
+    api,
     status,
     provider,
     channels,
