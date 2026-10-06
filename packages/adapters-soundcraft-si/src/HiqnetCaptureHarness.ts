@@ -30,7 +30,7 @@ export interface HiqnetCaptureHarnessOptions {
  * reaching the NestLive machine over UDP/TCP and to preserve evidence.
  */
 export class HiqnetCaptureHarness {
-  private readonly port: number;
+  private port: number;
   private readonly udp = dgram.createSocket({ type: 'udp4', reuseAddr: true });
   private readonly tcp = net.createServer();
   private readonly frames: HiqnetFrameEvidence[] = [];
@@ -64,24 +64,46 @@ export class HiqnetCaptureHarness {
       });
     });
 
-    await Promise.all([
-      new Promise<void>((resolve, reject) => {
-        this.udp.once('error', reject);
-        this.udp.bind(
-          this.port,
-          this.options.localAddress,
-          () => resolve()
-        );
-      }),
-      new Promise<void>((resolve, reject) => {
-        this.tcp.once('error', reject);
+    await new Promise<void>((resolve, reject) => {
+      const onError = (error: Error) => {
+        this.udp.off('error', onError);
+        reject(error);
+      };
+      this.udp.once('error', onError);
+      this.udp.bind(
+        this.port,
+        this.options.localAddress,
+        () => {
+          this.udp.off('error', onError);
+          const address = this.udp.address();
+          if (typeof address !== 'string') {
+            this.port = address.port;
+          }
+          resolve();
+        }
+      );
+    });
+
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const onError = (error: Error) => {
+          this.tcp.off('error', onError);
+          reject(error);
+        };
+        this.tcp.once('error', onError);
         this.tcp.listen(
           this.port,
           this.options.localAddress,
-          () => resolve()
+          () => {
+            this.tcp.off('error', onError);
+            resolve();
+          }
         );
-      })
-    ]);
+      });
+    } catch (error) {
+      await new Promise<void>(resolve => this.udp.close(() => resolve()));
+      throw error;
+    }
 
     this.started = true;
   }

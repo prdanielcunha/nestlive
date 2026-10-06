@@ -106,7 +106,7 @@ export class SoundcraftPhysicalSpikeSession {
         this.options.consoleModel ?? 'Soundcraft Si Expression',
       firmware: this.options.firmware,
       localAddress: this.options.localAddress,
-      port: this.options.port ?? 3804,
+      port: stats.port,
       startedAt: this.startedAt,
       stoppedAt: this.stoppedAt,
       markers: this.markers.map(marker => ({ ...marker })),

@@ -9,7 +9,7 @@ describe('Soundcraft physical spike session', () => {
     const session = new SoundcraftPhysicalSpikeSession({
       venue: 'Industrial',
       consoleModel: 'Soundcraft Si Expression',
-      port: 43804,
+      port: 0,
       captureFullPayload: true
     });
 
@@ -29,7 +29,7 @@ describe('Soundcraft physical spike session', () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), 'nestlive-sc-'));
     const file = path.join(dir, 'spike.json');
     const session = new SoundcraftPhysicalSpikeSession({
-      port: 43805
+      port: 0
     });
 
     try {
