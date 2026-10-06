@@ -4,6 +4,7 @@ import {
   getAuth,
   onAuthStateChanged,
   signInWithEmailAndPassword,
+  signInWithCustomToken,
   signInWithPopup,
   signOut,
   type User
@@ -62,6 +63,16 @@ export async function remoteEmailSignIn(
     authInstance(),
     email,
     password
+  );
+  return result.user;
+}
+
+export async function remoteCustomTokenSignIn(
+  customToken: string
+): Promise<User> {
+  const result = await signInWithCustomToken(
+    authInstance(),
+    customToken
   );
   return result.user;
 }
