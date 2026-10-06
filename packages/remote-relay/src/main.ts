@@ -1,6 +1,6 @@
 import {
   FirebaseAdminIdentityVerifier,
-  FirebaseScopeClaimAuthorizer,
+  FirestoreMembershipScopeAuthorizer,
   RelayTicketSigner,
   RemoteRelayServer
 } from './index';
@@ -14,9 +14,7 @@ if (!signingKey) {
 const server = new RemoteRelayServer({
   port,
   identityVerifier: new FirebaseAdminIdentityVerifier(),
-  scopeAuthorizer: new FirebaseScopeClaimAuthorizer(
-    process.env.NESTLIVE_SCOPE_CLAIM?.trim() || 'nestliveScopes'
-  ),
+  scopeAuthorizer: new FirestoreMembershipScopeAuthorizer(),
   ticketSigner: new RelayTicketSigner(signingKey)
 });
 
