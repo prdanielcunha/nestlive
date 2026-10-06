@@ -2,19 +2,51 @@
 
 **NestLive** é o módulo de operação e orquestração de cultos da MillionsNest.
 
-Arquitetura: **LAN-first, provider-agnostic, offline-capable, capability-driven e state-is-truth**.
+O repositório oficial é `prdanielcunha/nestlive` e o nome do módulo é **NestLive**.
 
-Este repositório sucede a implementação experimental de `musicscale-live` e passa a ser a fonte oficial do módulo **NestLive**.
+## Princípios
 
-## Prioridade atual
+- LAN-first;
+- provider-agnostic;
+- offline-capable;
+- capability-driven;
+- state-is-truth;
+- zero hardware adicional obrigatório no caminho principal;
+- zero API paga obrigatória para operação local;
+- PT / EN / ES desde o início.
 
-Roadmap v0.2 — início das fases de áudio:
+## Roadmap em execução
 
-- **A0** — contratos de áudio e multi-rede;
-- **A1** — Live Node multi-network;
-- **A2** — Meter Engine;
-- **A3** — provider Behringer X32;
-- **A4** — Mix UI premium;
-- **A5/A6** — spike físico e provider Soundcraft Si Expression.
+A implementação começou pela **FASE A0 — contratos de áudio e multi-rede** do Roadmap v0.2.
 
-O caminho crítico deve continuar operando localmente sem depender da internet ou de IA.
+Nesta primeira entrega entram:
+
+- `AudioConsoleProvider` neutro;
+- `AudioCapabilitySet`;
+- `MeterFrame`;
+- contratos de canais, buses, groups e routing;
+- níveis de safety;
+- `NetworkInterface`;
+- `ProviderNetworkBinding`;
+- feature flag `live_mix`;
+- provider de áudio simulado para provar o contrato sem depender de hardware.
+
+A base madura de `musicscale-live` será portada de forma controlada depois que os contratos NestLive estiverem estáveis. Nenhuma configuração de produção antiga será copiada automaticamente.
+
+## Estrutura
+
+```text
+packages/domain                contratos neutros do NestLive
+packages/adapters-audio-sim    console simulada para A0/A2
+docs/                          decisões e execução do roadmap
+```
+
+## Comandos
+
+```bash
+npm install
+npm run typecheck
+npm test
+```
+
+> `live_mix` permanece desligado por padrão enquanto os gates A0–A3 não forem validados.

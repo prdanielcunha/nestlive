@@ -1,0 +1,13 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "installCommand": "npm install --no-audit --no-fund",
+  "buildCommand": "npm run build --workspace=@millionsnest/nestlive-web",
+  "outputDirectory": "apps/live/dist",
+  "framework": null,
+  "rewrites": [
+    {
+      "source": "/((?!assets/|manifest.webmanifest|sw.js|workbox-).*)",
+      "destination": "/index.html"
+    }
+  ]
+}

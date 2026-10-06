@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "candidateVersion": "0.1.0-beta.1",
+  "status": "pending",
+  "approvedBy": "",
+  "approvedAt": "",
+  "evidence": {
+    "windowsIpad": { "result": "PENDING", "ref": "" },
+    "windowsAndroid": { "result": "PENDING", "ref": "" },
+    "x32MonteCastelo": { "result": "PENDING", "ref": "" },
+    "x32DualNetwork": { "result": "PENDING", "ref": "" },
+    "x32HourMeters": { "result": "PENDING", "ref": "" },
+    "soundcraftIndustrial": { "result": "PENDING", "ref": "" },
+    "holyricsResolumeTwoPc": { "result": "PENDING", "ref": "" },
+    "propresenterOnly": { "result": "PENDING", "ref": "" },
+    "internetCutLanContinuity": { "result": "PENDING", "ref": "" },
+    "nodeRestartNoReplay": { "result": "PENDING", "ref": "" },
+    "providerFailureIsolation": { "result": "PENDING", "ref": "" },
+    "commandObservedP95": { "result": "PENDING", "ref": "", "p95Ms": null },
+    "threeSimulatedServices": { "result": "PENDING", "ref": "", "count": 0 },
+    "accompaniedRealService": { "result": "PENDING", "ref": "", "count": 0 },
+    "volunteerUx": { "result": "PENDING", "ref": "" },
+    "realDeviceAccessibility": { "result": "PENDING", "ref": "" },
+    "windowsSignedInstallerTrust": { "result": "PENDING", "ref": "" },
+    "macosSignedNotarizedTrust": { "result": "PENDING", "ref": "" },
+    "branchProtection": { "result": "PENDING", "ref": "" }
+  }
+}

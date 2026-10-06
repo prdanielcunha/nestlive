@@ -1,0 +1,22 @@
+{
+  "name": "nestlive",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace=@millionsnest/nestlive-web",
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "build:nodes": "npm run build --workspace=@millionsnest/nestlive-production-node && npm run build --workspace=@millionsnest/nestlive-node && npm run build --workspace=@millionsnest/nestlive-service",
+    "start:service": "npm run start --workspace=@millionsnest/nestlive-service",
+    "check:production-certification": "node scripts/check-production-certification.mjs"
+  },
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "packageManager": "npm@11"
+}

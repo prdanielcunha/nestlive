@@ -1,0 +1,132 @@
+import { describe, expect, it } from 'vitest';
+import type { LiveCommand } from '@millionsnest/nestlive-production-domain';
+import { ResolumeAdapter } from '../src/ResolumeAdapter';
+import type { ResolumeRestApi } from '../src/ResolumeRestClient';
+
+class FakeApi implements ResolumeRestApi {
+  calls: Array<{ method: string; path: string; body?: unknown }> = [];
+
+  async get<T>(path: string): Promise<T> {
+    this.calls.push({ method: 'GET', path });
+    if (path === '/product') return { name: 'Arena', version: '7.22' } as T;
+    if (path === '/composition') return { id: 'composition-1', name: 'Sunday' } as T;
+    return {} as T;
+  }
+
+  async post<T>(path: string, body?: unknown): Promise<T> {
+    this.calls.push({ method: 'POST', path, body });
+    return undefined as T;
+  }
+
+  async getBinary(path: string) {
+    this.calls.push({ method: 'GET_BINARY', path });
+    return {
+      contentType: 'image/jpeg',
+      body: new Uint8Array([1, 2, 3])
+    };
+  }
+}
+
+function command(
+  capability: LiveCommand['capability'],
+  payload: Record<string, unknown> = {}
+): LiveCommand {
+  return {
+    id: 'cmd-1',
+    correlationId: 'corr-1',
+    organizationId: 'org-1',
+    venueId: 'venue-1',
+    liveSystemId: 'system-1',
+    liveSessionId: 'session-1',
+    actorId: 'user-1',
+    origin: 'live-ui',
+    capability,
+    targetProviderIds: ['resolume-1'],
+    outputTargets: ['main'],
+    payload,
+    idempotencyKey: 'idem-1',
+    createdAt: new Date(0).toISOString(),
+    safetyLevel: 'normal'
+  };
+}
+
+describe('ResolumeAdapter', () => {
+  it('exposes visual capabilities after a successful product probe', async () => {
+    const api = new FakeApi();
+    const adapter = new ResolumeAdapter({ id: 'resolume-1', nodeId: 'node-1', api });
+    const probe = await adapter.probe();
+
+    expect(probe.reachable).toBe(true);
+    expect(probe.capabilities).toContain('visual.composition.read');
+    expect(probe.capabilities).toContain('visual.clip.trigger');
+    expect(probe.capabilities).toContain('visual.layer.clear');
+    expect(probe.capabilities).toContain('visual.composition.clear');
+    expect(probe.capabilities).toContain('visual.outputs.read');
+    expect(probe.capabilities).toContain('visual.output.snapshot');
+    expect(probe.capabilities).toContain('visual.clip.thumbnail');
+  });
+
+  it('triggers clips by stable id', async () => {
+    const api = new FakeApi();
+    const adapter = new ResolumeAdapter({ id: 'resolume-1', nodeId: 'node-1', api });
+    await adapter.probe();
+
+    const result = await adapter.execute(command('visual.clip.trigger', {
+      clipId: '1658311521181'
+    }));
+
+    expect(result.accepted).toBe(true);
+    expect(api.calls.some(call =>
+      call.method === 'POST' &&
+      call.path === '/composition/clips/by-id/1658311521181/connect'
+    )).toBe(true);
+  });
+
+  it('fetches monitor snapshots through the neutral asset contract', async () => {
+    const api = new FakeApi();
+    const adapter = new ResolumeAdapter({ id: 'resolume-1', nodeId: 'node-1', api });
+    await adapter.probe();
+
+    const asset = await adapter.fetchAsset({
+      kind: 'output.snapshot',
+      targetId: 'monitor-main',
+      format: 'jpeg'
+    });
+
+    expect(asset.contentType).toBe('image/jpeg');
+    expect(asset.body.byteLength).toBe(3);
+    expect(api.calls.some(call =>
+      call.method === 'GET_BINARY' &&
+      call.path === '/composition/monitors/monitor-main/snapshot.jpg'
+    )).toBe(true);
+  });
+
+  it('fetches clip thumbnails by stable id', async () => {
+    const api = new FakeApi();
+    const adapter = new ResolumeAdapter({ id: 'resolume-1', nodeId: 'node-1', api });
+    await adapter.probe();
+
+    const asset = await adapter.fetchAsset({
+      kind: 'clip.thumbnail',
+      targetId: 'clip-44'
+    });
+
+    expect(asset.contentType).toBe('image/jpeg');
+    expect(asset.body.byteLength).toBe(3);
+    expect(api.calls.some(call =>
+      call.method === 'GET_BINARY' &&
+      call.path === '/composition/clips/by-id/clip-44/thumbnail'
+    )).toBe(true);
+  });
+
+  it('clears layers by stable id', async () => {
+    const api = new FakeApi();
+    const adapter = new ResolumeAdapter({ id: 'resolume-1', nodeId: 'node-1', api });
+    await adapter.probe();
+
+    await adapter.execute(command('visual.layer.clear', { layerId: 'layer-44' }));
+    expect(api.calls.some(call =>
+      call.path === '/composition/layers/by-id/layer-44/clear'
+    )).toBe(true);
+  });
+});

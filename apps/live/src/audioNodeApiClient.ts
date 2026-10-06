@@ -1,0 +1,540 @@
+import type {
+  AudioChannel,
+  AudioChannelProcessingState,
+  AudioCommandEnvelope,
+  AudioCommandExecution,
+  AudioControlCommand,
+  AudioSafetyLevel,
+  AudioStatePatch,
+  MeterFrame,
+  NetworkInterface,
+  ProviderNetworkBinding,
+  ScaleAudioContext
+} from '@millionsnest/nestlive-domain';
+
+export interface AudioProviderSummary {
+  providerInstanceId: string;
+  capabilities: string[];
+}
+
+export interface GuidedNetworkCheck {
+  id: string;
+  label: string;
+  severity: 'ok' | 'attention' | 'blocked';
+  detail: string;
+  action?: string;
+}
+
+export interface GuidedNetworkPlan {
+  cloudInterfaceId?: string;
+  audioInterfaceId?: string;
+  checks: GuidedNetworkCheck[];
+  readyForReadOnlyProbe: boolean;
+}
+
+export interface X32DiscoveryResult {
+  address: string;
+  networkName?: string;
+  model?: string;
+  firmware?: string;
+  latencyMs: number;
+}
+
+export interface NestLiveNodeConnection {
+  httpBaseUrl: string;
+  wsUrl: string;
+  token: string;
+  providerInstanceId?: string;
+}
+
+function ipv4IsPrivate(hostname: string): boolean {
+  const parts = hostname.split('.').map(Number);
+  if (
+    parts.length !== 4 ||
+    parts.some(part => !Number.isInteger(part) || part < 0 || part > 255)
+  ) {
+    return false;
+  }
+
+  return (
+    parts[0] === 10 ||
+    parts[0] === 127 ||
+    (parts[0] === 169 && parts[1] === 254) ||
+    (parts[0] === 192 && parts[1] === 168) ||
+    (parts[0] === 172 && (parts[1] ?? 0) >= 16 && (parts[1] ?? 0) <= 31)
+  );
+}
+
+export function normalizePrivateNodeUrl(input: string): string {
+  const value = input.trim();
+  const withProtocol = /^https?:\/\//i.test(value) ? value : `http://${value}`;
+  const url = new URL(withProtocol);
+  const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+
+  const local =
+    host === 'localhost' ||
+    host === '::1' ||
+    host.endsWith('.local') ||
+    host.startsWith('fe80:') ||
+    host.startsWith('fc') ||
+    host.startsWith('fd') ||
+    ipv4IsPrivate(host);
+
+  if (!local) throw new Error('node_must_be_local');
+  if (!['http:', 'https:'].includes(url.protocol)) {
+    throw new Error('unsupported_node_protocol');
+  }
+
+  url.pathname = '';
+  url.search = '';
+  url.hash = '';
+  return url.toString().replace(/\/$/, '');
+}
+
+function targetAddressSpace(url: URL): 'local' | 'loopback' {
+  const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  return host === 'localhost' ||
+    host === '::1' ||
+    host.startsWith('127.')
+    ? 'loopback'
+    : 'local';
+}
+
+export class NestLiveAudioApiClient {
+  private readonly httpBaseUrl: string;
+
+  constructor(private readonly connection: NestLiveNodeConnection) {
+    this.httpBaseUrl = normalizePrivateNodeUrl(connection.httpBaseUrl);
+  }
+
+  private async request<T>(
+    path: string,
+    init?: RequestInit
+  ): Promise<T> {
+    const url = new URL(path, this.httpBaseUrl);
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 5000);
+
+    try {
+      const networkInit = {
+        ...init,
+        cache: 'no-store',
+        signal: controller.signal,
+        targetAddressSpace: targetAddressSpace(url),
+        headers: {
+          authorization: `Bearer ${this.connection.token}`,
+          'content-type': 'application/json',
+          ...(init?.headers ?? {})
+        }
+      } as RequestInit & {
+        targetAddressSpace?: 'local' | 'loopback';
+      };
+
+      const response = await fetch(url, networkInit);
+      const body = (await response.json().catch(() => ({}))) as T & {
+        error?: string;
+      };
+
+      if (!response.ok) {
+        throw new Error(body.error ?? `node_http_${response.status}`);
+      }
+      return body;
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        throw new Error('node_timeout');
+      }
+      throw error;
+    } finally {
+      window.clearTimeout(timeout);
+    }
+  }
+
+  async health(): Promise<{
+    product: string;
+    status: string;
+    now: string;
+  }> {
+    const url = new URL('/health', this.httpBaseUrl);
+    const response = await fetch(url, {
+      cache: 'no-store',
+      targetAddressSpace: targetAddressSpace(url)
+    } as RequestInit & {
+      targetAddressSpace?: 'local' | 'loopback';
+    });
+
+    if (!response.ok) throw new Error('node_unreachable');
+    return response.json();
+  }
+
+  async inspectNetwork(): Promise<{
+    interfaces: NetworkInterface[];
+    bindings?: ProviderNetworkBinding[];
+    plan: GuidedNetworkPlan;
+  }> {
+    return this.request('/v1/network/plan');
+  }
+
+  async discoverX32(): Promise<X32DiscoveryResult[]> {
+    const body = await this.request<{ consoles: X32DiscoveryResult[] }>(
+      '/v1/audio/discover/x32',
+      { method: 'POST', body: '{}' }
+    );
+    return body.consoles;
+  }
+
+  async connectX32(address: string): Promise<{
+    providerInstanceId: string;
+    state: unknown;
+  }> {
+    return this.request('/v1/audio/connect/x32', {
+      method: 'POST',
+      body: JSON.stringify({ address })
+    });
+  }
+
+  streamMeters(
+    providerInstanceId: string,
+    input: {
+      onFrame: (frame: MeterFrame) => void;
+      onStatus?: (
+        status: 'connecting' | 'online' | 'offline'
+      ) => void;
+    }
+  ): () => void {
+    const controller = new AbortController();
+    const url = new URL(
+      `/v1/audio/providers/${encodeURIComponent(
+        providerInstanceId
+      )}/meters/stream`,
+      this.httpBaseUrl
+    );
+
+    input.onStatus?.('connecting');
+
+    void (async () => {
+      try {
+        const response = await fetch(url, {
+          cache: 'no-store',
+          signal: controller.signal,
+          headers: {
+            authorization: `Bearer ${this.connection.token}`
+          },
+          targetAddressSpace: targetAddressSpace(url)
+        } as RequestInit & {
+          targetAddressSpace?: 'local' | 'loopback';
+        });
+
+        if (!response.ok || !response.body) {
+          throw new Error(`meter_stream_http_${response.status}`);
+        }
+
+        input.onStatus?.('online');
+        const reader = response.body
+          .pipeThrough(new TextDecoderStream())
+          .getReader();
+        let buffer = '';
+
+        while (!controller.signal.aborted) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += value;
+
+          let newline = buffer.indexOf('\n');
+          while (newline >= 0) {
+            const line = buffer.slice(0, newline).trim();
+            buffer = buffer.slice(newline + 1);
+
+            if (line) {
+              try {
+                const parsed = JSON.parse(line) as {
+                  type?: string;
+                  frame?: MeterFrame;
+                };
+                if (
+                  parsed.type === 'meter.frame' &&
+                  parsed.frame
+                ) {
+                  input.onFrame(parsed.frame);
+                }
+              } catch {
+                // One invalid telemetry frame never tears down the stream.
+              }
+            }
+            newline = buffer.indexOf('\n');
+          }
+        }
+      } catch (error) {
+        if (
+          !(error instanceof DOMException &&
+            error.name === 'AbortError')
+        ) {
+          input.onStatus?.('offline');
+        }
+      }
+    })();
+
+    return () => controller.abort();
+  }
+
+  streamState(
+    providerInstanceId: string,
+    input: {
+      onPatch: (patch: AudioStatePatch) => void;
+      onError?: (error: string) => void;
+    }
+  ): () => void {
+    const controller = new AbortController();
+    const url = new URL(
+      `/v1/audio/providers/${encodeURIComponent(
+        providerInstanceId
+      )}/state/stream`,
+      this.httpBaseUrl
+    );
+
+    void (async () => {
+      try {
+        const response = await fetch(url, {
+          cache: 'no-store',
+          signal: controller.signal,
+          headers: {
+            authorization: `Bearer ${this.connection.token}`
+          },
+          targetAddressSpace: targetAddressSpace(url)
+        } as RequestInit & {
+          targetAddressSpace?: 'local' | 'loopback';
+        });
+
+        if (!response.ok || !response.body) {
+          throw new Error(`state_stream_http_${response.status}`);
+        }
+
+        const reader = response.body
+          .pipeThrough(new TextDecoderStream())
+          .getReader();
+        let buffer = '';
+
+        while (!controller.signal.aborted) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += value;
+
+          let newline = buffer.indexOf('\n');
+          while (newline >= 0) {
+            const line = buffer.slice(0, newline).trim();
+            buffer = buffer.slice(newline + 1);
+            if (line) {
+              try {
+                const parsed = JSON.parse(line) as {
+                  type?: string;
+                  patch?: AudioStatePatch;
+                };
+                if (
+                  parsed.type === 'audio.state.patch' &&
+                  parsed.patch
+                ) {
+                  input.onPatch(parsed.patch);
+                }
+              } catch {
+                // A malformed patch is isolated from the live UI.
+              }
+            }
+            newline = buffer.indexOf('\n');
+          }
+        }
+      } catch (error) {
+        if (
+          !(error instanceof DOMException &&
+            error.name === 'AbortError')
+        ) {
+          input.onError?.(
+            error instanceof Error
+              ? error.message
+              : 'state_stream_failed'
+          );
+        }
+      }
+    })();
+
+    return () => controller.abort();
+  }
+
+  async providers(): Promise<AudioProviderSummary[]> {
+    const body = await this.request<{ providers: AudioProviderSummary[] }>(
+      '/v1/audio/providers'
+    );
+    return body.providers;
+  }
+
+  async channels(providerInstanceId: string): Promise<AudioChannel[]> {
+    const body = await this.request<{ channels: AudioChannel[] }>(
+      `/v1/audio/providers/${encodeURIComponent(providerInstanceId)}/channels`
+    );
+    return body.channels;
+  }
+
+  async session(): Promise<{
+    tokenId?: string;
+    deviceName?: string;
+    binding?: {
+      nodeId: string;
+      organizationId: string;
+      venueId: string;
+      liveSystemId: string;
+      deviceId: string;
+      deviceName: string;
+      pairedAt: string;
+      lastSeenAt: string;
+    };
+  }> {
+    return this.request('/v1/session');
+  }
+
+  async remoteStatus(): Promise<{
+    tunnel: {
+      state: 'disabled' | 'connecting' | 'online' | 'offline';
+      relayUrl?: string;
+      sessions: number;
+      lastConnectedAt?: string;
+      lastError?: string;
+    };
+    grants: Array<{
+      id: string;
+      organizationId: string;
+      venueId: string;
+      liveSystemId: string;
+      actorId: string;
+      role: 'technical_admin' | 'operator' | 'viewer';
+      permissions: string[];
+      issuedAt: string;
+      expiresAt: string;
+      revokedAt?: string;
+    }>;
+  }> {
+    return this.request('/v1/remote/status');
+  }
+
+  async configureRemoteRelay(input: {
+    relayUrl: string;
+    nodeTicket: string;
+    scope: {
+      nodeId: string;
+      organizationId: string;
+      venueId: string;
+      liveSystemId: string;
+    };
+  }): Promise<unknown> {
+    return this.request('/v1/remote/relay/configure', {
+      method: 'POST',
+      body: JSON.stringify(input)
+    });
+  }
+
+  async disableRemoteRelay(): Promise<void> {
+    await this.request('/v1/remote/relay/disable', {
+      method: 'POST',
+      body: '{}'
+    });
+  }
+
+  async issueRemoteGrant(input: {
+    actorId: string;
+    role: 'technical_admin' | 'operator' | 'viewer';
+    permissions: Array<
+      | 'audio.read'
+      | 'audio.fader.write'
+      | 'audio.mute.write'
+      | 'audio.guarded.write'
+      | 'audio.critical.write'
+    >;
+    ttlMinutes: number;
+  }): Promise<{
+    grant: {
+      id: string;
+      organizationId: string;
+      venueId: string;
+      liveSystemId: string;
+      actorId: string;
+      role: 'technical_admin' | 'operator' | 'viewer';
+      permissions: string[];
+      issuedAt: string;
+      expiresAt: string;
+    };
+    token: string;
+  }> {
+    return this.request('/v1/remote/grants', {
+      method: 'POST',
+      body: JSON.stringify(input)
+    });
+  }
+
+  async revokeRemoteGrant(id: string): Promise<boolean> {
+    const result = await this.request<{ revoked: boolean }>(
+      `/v1/remote/grants/${encodeURIComponent(id)}/revoke`,
+      {
+        method: 'POST',
+        body: '{}'
+      }
+    );
+    return result.revoked;
+  }
+
+  async scaleAudioContext(): Promise<ScaleAudioContext | undefined> {
+    const body = await this.request<{
+      context?: ScaleAudioContext;
+    }>('/v1/audio/scale-context');
+    return body.context;
+  }
+
+  async assignScaleChannel(input: {
+    roleName: string;
+    participantUserId?: string;
+    channelId: string;
+    enabled?: boolean;
+  }): Promise<ScaleAudioContext | undefined> {
+    const body = await this.request<{
+      context?: ScaleAudioContext;
+    }>('/v1/audio/scale-context/assignments', {
+      method: 'POST',
+      body: JSON.stringify(input)
+    });
+    return body.context;
+  }
+
+  async channelProcessing(
+    providerInstanceId: string,
+    channelId: string
+  ): Promise<AudioChannelProcessingState> {
+    const body = await this.request<{
+      processing: AudioChannelProcessingState;
+    }>(
+      `/v1/audio/providers/${encodeURIComponent(
+        providerInstanceId
+      )}/channels/${encodeURIComponent(channelId)}/processing`
+    );
+    return body.processing;
+  }
+
+  async execute(input: {
+    providerInstanceId: string;
+    actorId: string;
+    command: AudioControlCommand;
+    confirmedSafetyLevel?: AudioSafetyLevel;
+  }): Promise<AudioCommandExecution> {
+    const envelope: AudioCommandEnvelope = {
+      id: crypto.randomUUID(),
+      actorId: input.actorId,
+      providerInstanceId: input.providerInstanceId,
+      createdAt: new Date().toISOString(),
+      command: input.command,
+      confirmedSafetyLevel: input.confirmedSafetyLevel
+    };
+
+    return this.request<AudioCommandExecution>(
+      '/v1/audio/commands',
+      {
+        method: 'POST',
+        body: JSON.stringify(envelope)
+      }
+    );
+  }
+}

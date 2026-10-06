@@ -1,0 +1,16 @@
+# Public browser configuration for NestLive web / Remote Mix.
+# Firebase API keys are public client identifiers; private service credentials
+# must never be placed in VITE_* variables.
+VITE_FIREBASE_API_KEY=
+VITE_FIREBASE_AUTH_DOMAIN=millionsnest.firebaseapp.com
+VITE_FIREBASE_PROJECT_ID=millionsnest
+VITE_FIREBASE_STORAGE_BUCKET=millionsnest.appspot.com
+VITE_FIREBASE_MESSAGING_SENDER_ID=
+VITE_FIREBASE_APP_ID=
+
+# Public NestLive web origin used when generating temporary Remote Mix links.
+VITE_NESTLIVE_PUBLIC_URL=https://live.millionsnest.com
+
+# Public HTTPS origin of the Remote Mix relay service.
+# The browser upgrades it to WSS automatically.
+VITE_NESTLIVE_RELAY_URL=

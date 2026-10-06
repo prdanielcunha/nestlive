@@ -1,0 +1,76 @@
+#ifndef SourceDir
+  #define SourceDir "."
+#endif
+#ifndef OutputDir
+  #define OutputDir "."
+#endif
+#ifndef AppVersion
+  #define AppVersion "0.1.0"
+#endif
+
+#define AppName "NestLive"
+#define Publisher "MillionsNest"
+#define ServiceExe "NestLiveService.exe"
+
+[Setup]
+AppId={{27DA6367-11F0-48F7-B6D3-E2CE4F28B94A}
+AppName={#AppName}
+AppVersion={#AppVersion}
+AppPublisher={#Publisher}
+DefaultDirName={autopf}\NestLive
+DefaultGroupName={#AppName}
+DisableProgramGroupPage=yes
+OutputDir={#OutputDir}
+OutputBaseFilename=NestLiveSetup
+Compression=lzma2
+SolidCompression=yes
+WizardStyle=modern
+PrivilegesRequired=admin
+ArchitecturesAllowed=x64compatible
+ArchitecturesInstallIn64BitMode=x64compatible
+UninstallDisplayName={#AppName}
+CloseApplications=yes
+RestartApplications=no
+SetupLogging=yes
+
+[Files]
+Source: "{#SourceDir}\NestLiveService.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#SourceDir}\NestLiveAudioNode.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#SourceDir}\NestLiveProductionNode.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#SourceDir}\web\*"; DestDir: "{app}\web"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#SourceDir}\web-production\*"; DestDir: "{app}\web-production"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#SourceDir}\README-INSTALL.md"; DestDir: "{app}"; Flags: ignoreversion
+
+[Registry]
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "NestLive"; ValueData: """{app}\{#ServiceExe}"""; Flags: uninsdeletevalue
+
+[Run]
+Filename: "{sys}\taskkill.exe"; Parameters: "/IM NestLiveService.exe /F"; Flags: runhidden waituntilterminated
+Filename: "{sys}\taskkill.exe"; Parameters: "/IM NestLiveAudioNode.exe /F"; Flags: runhidden waituntilterminated
+Filename: "{sys}\taskkill.exe"; Parameters: "/IM NestLiveProductionNode.exe /F"; Flags: runhidden waituntilterminated
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""NestLive Gateway"""; Flags: runhidden waituntilterminated
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""NestLive Discovery"""; Flags: runhidden waituntilterminated
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""NestLive Meter Stream"""; Flags: runhidden waituntilterminated
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""NestLive Gateway"" dir=in action=allow protocol=TCP localport=4317 profile=private"; Flags: runhidden waituntilterminated
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""NestLive Discovery"" dir=in action=allow protocol=UDP localport=4318 profile=private"; Flags: runhidden waituntilterminated
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""NestLive Meter Stream"" dir=in action=allow protocol=TCP localport=4319 profile=private"; Flags: runhidden waituntilterminated
+Filename: "{app}\{#ServiceExe}"; Description: "Iniciar NestLive"; Flags: nowait postinstall skipifsilent
+Filename: "http://127.0.0.1:4317/local"; Description: "Abrir NestLive"; Flags: shellexec postinstall skipifsilent nowait
+
+[UninstallRun]
+Filename: "{sys}\taskkill.exe"; Parameters: "/IM NestLiveService.exe /F"; Flags: runhidden waituntilterminated
+Filename: "{sys}\taskkill.exe"; Parameters: "/IM NestLiveAudioNode.exe /F"; Flags: runhidden waituntilterminated
+Filename: "{sys}\taskkill.exe"; Parameters: "/IM NestLiveProductionNode.exe /F"; Flags: runhidden waituntilterminated
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""NestLive Gateway"""; Flags: runhidden waituntilterminated
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""NestLive Discovery"""; Flags: runhidden waituntilterminated
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""NestLive Meter Stream"""; Flags: runhidden waituntilterminated
+
+[Code]
+procedure InitializeWizard;
+begin
+  WizardForm.Caption := 'NestLive';
+  WizardForm.WelcomeLabel1.Caption := 'Instalar NestLive';
+  WizardForm.WelcomeLabel2.Caption :=
+    'Prepare este computador para operar o culto com NestLive.' + #13#10 + #13#10 +
+    'A configuracao normal nao exige Git, terminal, IP ou porta.';
+end;
