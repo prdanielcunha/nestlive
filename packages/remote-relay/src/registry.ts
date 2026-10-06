@@ -51,6 +51,10 @@ export class RemoteRelayRegistry {
     return this.nodes.get(key(scope));
   }
 
+  node(id: string): RelayNodeConnection | undefined {
+    return [...this.nodes.values()].find(node => node.id === id);
+  }
+
   removeNode(id: string): RelayClientConnection[] {
     const entry = [...this.nodes.entries()].find(
       ([, node]) => node.id === id

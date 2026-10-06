@@ -82,6 +82,8 @@ export function canUseRemoteCapability(
     return grant.permissions.includes('audio.mute.write');
   }
   if (
+    capability === 'audio.pan.write' ||
+    capability === 'audio.busSend.write' ||
     capability === 'audio.gain.write' ||
     capability === 'audio.eq.write' ||
     capability === 'audio.gate.write' ||
