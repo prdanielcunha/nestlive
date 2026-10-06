@@ -23,3 +23,5 @@ export * from './runtime/staticWeb';
 export * from './soundcraft/soundcraftSpikeCoordinator';
 export * from './soundcraft/soundcraftSpikeConsole';
 export * from './audio/scaleAudioContextStore';
+export * from './remote/remoteMixTunnel';
+export * from './remote/remoteRelayConfigStore';
