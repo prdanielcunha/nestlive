@@ -31,6 +31,9 @@ import {
   PairingManager,
   renderNestLiveLocalConsole,
   renderSoundcraftSpikeConsole,
+  RemoteMixAuthority,
+  RemoteMixTunnelClient,
+  RemoteRelayConfigStore,
   ScaleAudioContextStore,
   SoundcraftSpikeCoordinator,
   validateProviderBinding
@@ -123,6 +126,12 @@ async function main(): Promise<void> {
   const scaleAudioContext = new ScaleAudioContextStore(
     path.join(STATE_DIR, 'scale-audio-context.json')
   );
+  const remoteMixAuthority = new RemoteMixAuthority(
+    path.join(STATE_DIR, 'remote-mix-grants.json')
+  );
+  const remoteRelayConfigStore = new RemoteRelayConfigStore(
+    path.join(STATE_DIR, 'remote-relay.json')
+  );
 
   const pairing = new PairingManager(tokenStore, {
     nodeId: NODE_ID,
@@ -140,6 +149,11 @@ async function main(): Promise<void> {
 
   const runtime = new NestLiveAudioRuntime();
   const providerIds = new Set<string>();
+  const remoteMixTunnel = new RemoteMixTunnelClient(
+    remoteMixAuthority,
+    runtime,
+    () => providerIds.values().next().value as string | undefined
+  );
 
   const inspectNetwork = async () => {
     if (platform() === 'win32') {
@@ -351,6 +365,26 @@ async function main(): Promise<void> {
     await runtime.startTelemetry(id, 40);
   }
 
+  const persistedRelay = await remoteRelayConfigStore
+    .get()
+    .catch(() => undefined);
+  if (persistedRelay) {
+    await remoteMixTunnel
+      .configure({
+        relayUrl: persistedRelay.relayUrl,
+        nodeTicket: persistedRelay.nodeTicket,
+        scope: persistedRelay.scope
+      })
+      .catch(error => {
+        console.log(
+          JSON.stringify({
+            event: 'remote_mix_relay_waiting',
+            error: error instanceof Error ? error.message : 'unknown'
+          })
+        );
+      });
+  }
+
   const authenticate = (token: string) => tokenStore.authenticate(token);
   const authorize = (token: string) => tokenStore.authorize(token);
 
@@ -368,6 +402,9 @@ async function main(): Promise<void> {
     activePairingCount: () => tokenStore.activeCount(),
     pairing,
     scaleAudioContext,
+    remoteMixAuthority,
+    remoteMixTunnel,
+    remoteRelayConfigStore,
     soundcraftSpike,
     soundcraftSpikeHtml: () =>
       renderSoundcraftSpikeConsole(soundcraftSpike.status()),
@@ -544,6 +581,7 @@ async function main(): Promise<void> {
     await discovery.stop().catch(() => undefined);
     await api.close().catch(() => undefined);
     await meters.close().catch(() => undefined);
+    await remoteMixTunnel.disable().catch(() => undefined);
     await soundcraftSpike.dispose().catch(() => undefined);
     await runtime.dispose().catch(() => undefined);
     process.exit(0);

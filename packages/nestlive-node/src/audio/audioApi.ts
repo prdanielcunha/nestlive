@@ -17,6 +17,9 @@ import {
 } from '../production/productionProxy';
 import { serveStaticWeb } from '../runtime/staticWeb';
 import type { SoundcraftSpikeCoordinator } from '../soundcraft/soundcraftSpikeCoordinator';
+import type { RemoteMixAuthority } from '../remote/remoteMixAuthority';
+import type { RemoteMixTunnelClient } from '../remote/remoteMixTunnel';
+import type { RemoteRelayConfigStore } from '../remote/remoteRelayConfigStore';
 
 function json(
   response: http.ServerResponse,
@@ -140,6 +143,9 @@ export interface AudioApiServerOptions {
   soundcraftSpike?: SoundcraftSpikeCoordinator;
   soundcraftSpikeHtml?: () => string;
   scaleAudioContext?: ScaleAudioContextStore;
+  remoteMixAuthority?: RemoteMixAuthority;
+  remoteMixTunnel?: RemoteMixTunnelClient;
+  remoteRelayConfigStore?: RemoteRelayConfigStore;
 }
 
 export class AudioApiServer {
@@ -575,6 +581,185 @@ export class AudioApiServer {
           assignment,
           context: await this.options.scaleAudioContext.current()
         });
+        return;
+      }
+
+            if (
+        request.method === 'GET' &&
+        url.pathname === '/v1/remote/status' &&
+        this.options.remoteMixAuthority &&
+        this.options.remoteMixTunnel
+      ) {
+        json(response, 200, {
+          tunnel: this.options.remoteMixTunnel.status(),
+          grants: await this.options.remoteMixAuthority.list()
+        });
+        return;
+      }
+
+      if (
+        request.method === 'POST' &&
+        url.pathname === '/v1/remote/grants' &&
+        this.options.remoteMixAuthority
+      ) {
+        const remoteAddress = request.socket.remoteAddress ?? '';
+        const loopback =
+          remoteAddress === '127.0.0.1' ||
+          remoteAddress === '::1' ||
+          remoteAddress === '::ffff:127.0.0.1';
+        if (!loopback) {
+          json(response, 403, { error: 'remote_admin_local_only' });
+          return;
+        }
+        if (!authorizedRecord?.binding) {
+          json(response, 403, {
+            error: 'remote_admin_scoped_pairing_required'
+          });
+          return;
+        }
+
+        const body = (await readJson(request, 24 * 1024)) as {
+          actorId?: string;
+          role?: 'technical_admin' | 'operator' | 'viewer';
+          permissions?: Array<
+            | 'audio.read'
+            | 'audio.fader.write'
+            | 'audio.mute.write'
+            | 'audio.guarded.write'
+            | 'audio.critical.write'
+          >;
+          ttlMinutes?: number;
+        };
+
+        const issued = await this.options.remoteMixAuthority.issue({
+          organizationId: authorizedRecord.binding.organizationId,
+          venueId: authorizedRecord.binding.venueId,
+          liveSystemId: authorizedRecord.binding.liveSystemId,
+          actorId: String(body.actorId ?? ''),
+          role: body.role ?? 'viewer',
+          permissions: Array.isArray(body.permissions)
+            ? body.permissions
+            : ['audio.read'],
+          ttlMinutes: body.ttlMinutes
+        });
+        json(response, 201, issued);
+        return;
+      }
+
+      const remoteRevokeMatch =
+        /^\/v1\/remote\/grants\/([^/]+)\/revoke$/.exec(
+          url.pathname
+        );
+      if (
+        request.method === 'POST' &&
+        remoteRevokeMatch &&
+        this.options.remoteMixAuthority
+      ) {
+        const remoteAddress = request.socket.remoteAddress ?? '';
+        const loopback =
+          remoteAddress === '127.0.0.1' ||
+          remoteAddress === '::1' ||
+          remoteAddress === '::ffff:127.0.0.1';
+        if (!loopback) {
+          json(response, 403, { error: 'remote_admin_local_only' });
+          return;
+        }
+        json(response, 200, {
+          revoked: await this.options.remoteMixAuthority.revoke(
+            decodeURIComponent(remoteRevokeMatch[1]!)
+          )
+        });
+        return;
+      }
+
+      if (
+        request.method === 'POST' &&
+        url.pathname === '/v1/remote/relay/configure' &&
+        this.options.remoteMixTunnel &&
+        this.options.remoteRelayConfigStore
+      ) {
+        const remoteAddress = request.socket.remoteAddress ?? '';
+        const loopback =
+          remoteAddress === '127.0.0.1' ||
+          remoteAddress === '::1' ||
+          remoteAddress === '::ffff:127.0.0.1';
+        if (!loopback) {
+          json(response, 403, { error: 'remote_admin_local_only' });
+          return;
+        }
+        if (!authorizedRecord?.binding) {
+          json(response, 403, {
+            error: 'remote_admin_scoped_pairing_required'
+          });
+          return;
+        }
+
+        const body = (await readJson(request, 64 * 1024)) as {
+          relayUrl?: string;
+          nodeTicket?: string;
+          scope?: {
+            nodeId?: string;
+            organizationId?: string;
+            venueId?: string;
+            liveSystemId?: string;
+          };
+        };
+        const scope = {
+          nodeId: String(body.scope?.nodeId ?? '').trim(),
+          organizationId: String(
+            body.scope?.organizationId ?? ''
+          ).trim(),
+          venueId: String(body.scope?.venueId ?? '').trim(),
+          liveSystemId: String(
+            body.scope?.liveSystemId ?? ''
+          ).trim()
+        };
+        if (
+          scope.nodeId !== authorizedRecord.binding.nodeId ||
+          scope.organizationId !==
+            authorizedRecord.binding.organizationId ||
+          scope.venueId !== authorizedRecord.binding.venueId ||
+          scope.liveSystemId !==
+            authorizedRecord.binding.liveSystemId
+        ) {
+          json(response, 403, { error: 'remote_relay_scope_mismatch' });
+          return;
+        }
+
+        const config = {
+          relayUrl: String(body.relayUrl ?? '').trim(),
+          nodeTicket: String(body.nodeTicket ?? '').trim(),
+          scope
+        };
+        await this.options.remoteRelayConfigStore.save({
+          ...config,
+          configuredAt: new Date().toISOString()
+        });
+        await this.options.remoteMixTunnel.configure(config);
+        json(response, 200, {
+          tunnel: this.options.remoteMixTunnel.status()
+        });
+        return;
+      }
+
+      if (
+        request.method === 'POST' &&
+        url.pathname === '/v1/remote/relay/disable' &&
+        this.options.remoteMixTunnel &&
+        this.options.remoteRelayConfigStore
+      ) {
+        const remoteAddress = request.socket.remoteAddress ?? '';
+        const loopback =
+          remoteAddress === '127.0.0.1' ||
+          remoteAddress === '::1' ||
+          remoteAddress === '::ffff:127.0.0.1';
+        if (!loopback) {
+          json(response, 403, { error: 'remote_admin_local_only' });
+          return;
+        }
+        await this.options.remoteMixTunnel.disable();
+        await this.options.remoteRelayConfigStore.clear();
+        json(response, 200, { disabled: true });
         return;
       }
 

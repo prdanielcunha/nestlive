@@ -219,7 +219,7 @@ export class RemoteRelayServer {
           identity,
           scope
         }),
-        expiresInSeconds: 300
+        expiresInSeconds: 14_400
       });
       return;
     }

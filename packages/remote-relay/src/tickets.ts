@@ -41,7 +41,7 @@ export class RelayTicketSigner {
     const now = input.now ?? new Date();
     const ttlMinutes = Math.max(
       1,
-      Math.min(15, Math.floor(input.ttlMinutes ?? 5))
+      Math.min(240, Math.floor(input.ttlMinutes ?? 240))
     );
     const claims: NodeRelayTicketClaims = {
       v: 1,
