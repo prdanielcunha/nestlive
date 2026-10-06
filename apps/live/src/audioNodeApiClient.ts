@@ -372,6 +372,112 @@ export class NestLiveAudioApiClient {
     return body.channels;
   }
 
+  async session(): Promise<{
+    tokenId?: string;
+    deviceName?: string;
+    binding?: {
+      nodeId: string;
+      organizationId: string;
+      venueId: string;
+      liveSystemId: string;
+      deviceId: string;
+      deviceName: string;
+      pairedAt: string;
+      lastSeenAt: string;
+    };
+  }> {
+    return this.request('/v1/session');
+  }
+
+  async remoteStatus(): Promise<{
+    tunnel: {
+      state: 'disabled' | 'connecting' | 'online' | 'offline';
+      relayUrl?: string;
+      sessions: number;
+      lastConnectedAt?: string;
+      lastError?: string;
+    };
+    grants: Array<{
+      id: string;
+      organizationId: string;
+      venueId: string;
+      liveSystemId: string;
+      actorId: string;
+      role: 'technical_admin' | 'operator' | 'viewer';
+      permissions: string[];
+      issuedAt: string;
+      expiresAt: string;
+      revokedAt?: string;
+    }>;
+  }> {
+    return this.request('/v1/remote/status');
+  }
+
+  async configureRemoteRelay(input: {
+    relayUrl: string;
+    nodeTicket: string;
+    scope: {
+      nodeId: string;
+      organizationId: string;
+      venueId: string;
+      liveSystemId: string;
+    };
+  }): Promise<unknown> {
+    return this.request('/v1/remote/relay/configure', {
+      method: 'POST',
+      body: JSON.stringify(input)
+    });
+  }
+
+  async disableRemoteRelay(): Promise<void> {
+    await this.request('/v1/remote/relay/disable', {
+      method: 'POST',
+      body: '{}'
+    });
+  }
+
+  async issueRemoteGrant(input: {
+    actorId: string;
+    role: 'technical_admin' | 'operator' | 'viewer';
+    permissions: Array<
+      | 'audio.read'
+      | 'audio.fader.write'
+      | 'audio.mute.write'
+      | 'audio.guarded.write'
+      | 'audio.critical.write'
+    >;
+    ttlMinutes: number;
+  }): Promise<{
+    grant: {
+      id: string;
+      organizationId: string;
+      venueId: string;
+      liveSystemId: string;
+      actorId: string;
+      role: 'technical_admin' | 'operator' | 'viewer';
+      permissions: string[];
+      issuedAt: string;
+      expiresAt: string;
+    };
+    token: string;
+  }> {
+    return this.request('/v1/remote/grants', {
+      method: 'POST',
+      body: JSON.stringify(input)
+    });
+  }
+
+  async revokeRemoteGrant(id: string): Promise<boolean> {
+    const result = await this.request<{ revoked: boolean }>(
+      `/v1/remote/grants/${encodeURIComponent(id)}/revoke`,
+      {
+        method: 'POST',
+        body: '{}'
+      }
+    );
+    return result.revoked;
+  }
+
   async scaleAudioContext(): Promise<ScaleAudioContext | undefined> {
     const body = await this.request<{
       context?: ScaleAudioContext;

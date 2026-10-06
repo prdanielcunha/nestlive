@@ -502,6 +502,18 @@ export class AudioApiServer {
 
       if (
         request.method === 'GET' &&
+        url.pathname === '/v1/session'
+      ) {
+        json(response, 200, {
+          tokenId: authorizedRecord?.id,
+          deviceName: authorizedRecord?.deviceName,
+          binding: authorizedRecord?.binding
+        });
+        return;
+      }
+
+            if (
+        request.method === 'GET' &&
         url.pathname === '/v1/audio/scale-context' &&
         this.options.scaleAudioContext
       ) {
