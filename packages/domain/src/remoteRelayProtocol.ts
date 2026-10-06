@@ -2,7 +2,12 @@ import type {
   AudioCommandEnvelope,
   AudioCommandExecution
 } from './audioCommands';
-import type { MeterFrame } from './audio';
+import type {
+  AudioCapability,
+  AudioChannel,
+  AudioConsoleState,
+  MeterFrame
+} from './audio';
 import type {
   RemoteMeterProfile,
   RemoteMixGrant
@@ -33,6 +38,10 @@ export type RemoteRelayClientMessage =
       visible: boolean;
     }
   | {
+      type: 'client.snapshot';
+      requestId: string;
+    }
+  | {
       type: 'client.command';
       requestId: string;
       envelope: AudioCommandEnvelope;
@@ -53,6 +62,18 @@ export type RemoteRelayNodeMessage =
       accepted: boolean;
       grant?: RemoteMixGrant;
       reason?: string;
+    }
+  | {
+      type: 'node.snapshot-result';
+      clientId: string;
+      requestId: string;
+      snapshot?: {
+        providerInstanceId: string;
+        capabilities: AudioCapability[];
+        state: AudioConsoleState;
+        channels: AudioChannel[];
+      };
+      error?: string;
     }
   | {
       type: 'node.command-result';
@@ -101,6 +122,11 @@ export type RemoteRelayServerMessage =
       visible: boolean;
     }
   | {
+      type: 'relay.snapshot';
+      clientId: string;
+      requestId: string;
+    }
+  | {
       type: 'relay.command';
       clientId: string;
       requestId: string;
@@ -119,6 +145,17 @@ export type RemoteRelayServerMessage =
   | {
       type: 'relay.denied';
       reason: string;
+    }
+  | {
+      type: 'relay.snapshot-result';
+      requestId: string;
+      snapshot?: {
+        providerInstanceId: string;
+        capabilities: AudioCapability[];
+        state: AudioConsoleState;
+        channels: AudioChannel[];
+      };
+      error?: string;
     }
   | {
       type: 'relay.command-result';
