@@ -5,3 +5,4 @@ export * from './soundcheck';
 export * from './scaleAudioContext';
 export * from './remoteMix';
 export * from './featureFlags';
+export * from './remoteRelayProtocol';
