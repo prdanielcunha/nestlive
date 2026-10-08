@@ -1,3 +1,4 @@
+import { createClientId } from './clientId';
 import type {
   AudioChannel,
   AudioChannelProcessingState,
@@ -521,7 +522,7 @@ export class NestLiveAudioApiClient {
     confirmedSafetyLevel?: AudioSafetyLevel;
   }): Promise<AudioCommandExecution> {
     const envelope: AudioCommandEnvelope = {
-      id: crypto.randomUUID(),
+      id: createClientId(),
       actorId: input.actorId,
       providerInstanceId: input.providerInstanceId,
       createdAt: new Date().toISOString(),
