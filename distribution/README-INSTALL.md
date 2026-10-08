@@ -49,3 +49,16 @@ Quando systemd user está disponível, o instalador cria `nestlive.service`.
 ## Certificação
 
 Um pacote gerado pelo CI é **beta técnico** até passar pelos gates físicos de X32, Soundcraft, Holyrics, Resolume, ProPresenter, queda de internet, reinício e testes de voluntário.
+
+## Download rápido
+
+A distribuição beta Windows é publicada como **pré-lançamento** em
+https://github.com/prdanielcunha/nestlive/releases após aprovação do
+pipeline de empacotamento no `main`.
+
+Se houver atraso na publicação do release, o último artefato de teste
+Windows está disponível (com login GitHub) em:
+https://github.com/prdanielcunha/nestlive/actions/runs/37521838561
+
+O instalador beta **não é uma certificação do equipamento**.
+É preciso testar localmente antes de usar comandos de áudio num culto.
