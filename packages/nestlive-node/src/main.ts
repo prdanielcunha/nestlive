@@ -468,14 +468,17 @@ async function main(): Promise<void> {
         item => item.id === plan.cloudInterfaceId
       );
       const address = cloudInterface?.ipv4[0];
-      const webUrl =
-        process.env.NESTLIVE_WEB_URL?.trim() ||
-        'https://nestlive.millionsnest.com';
       const nodeBase = address
         ? `http://${address}:${HTTP_PORT}`
         : undefined;
+      // The QR uses the PWA served by the Node itself. It keeps pairing
+      // same-origin, works without internet and avoids HTTPS→HTTP
+      // private-network mixed-content restrictions on tablets.
+      const preferredWebUrl = process.env.NESTLIVE_WEB_URL?.trim();
       const pairUrl = nodeBase
-        ? `${webUrl}/?pair=${encodeURIComponent(nodeBase)}`
+        ? preferredWebUrl
+          ? `${preferredWebUrl.endsWith('/') ? preferredWebUrl.slice(0, -1) : preferredWebUrl}/?pair=${encodeURIComponent(nodeBase)}`
+          : `${nodeBase}/`
         : undefined;
 
       return renderNestLiveLocalConsole({

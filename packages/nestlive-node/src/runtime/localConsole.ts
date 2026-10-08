@@ -67,6 +67,7 @@ main{width:min(920px,100%);display:grid;grid-template-columns:1fr 320px;gap:18px
 <h1>${escapeHtml(input.displayName)}</h1>
 <p class="muted">Este computador faz a ponte segura entre o NestLive e os equipamentos da igreja. A mesa nunca é exposta diretamente à internet.</p>
 <div>${providers}</div>
+<p><a class="tech-link" href="/production/" style="display:inline-block;padding:13px 17px;margin-top:14px;border-radius:13px;background:#7965ed;color:#fff;font-size:14px;font-weight:700">Abrir painel de produção →</a></p>
 ${input.soundcraftSpikeUrl
   ? `<p><a class="tech-link" href="${escapeHtml(input.soundcraftSpikeUrl)}">Ferramenta técnica · Soundcraft Physical Spike</a></p>`
   : ''}

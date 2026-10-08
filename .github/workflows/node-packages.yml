@@ -11,7 +11,7 @@ on:
       - 'package.json'
       - '.github/workflows/node-packages.yml'
   push:
-    branches: [production]
+    branches: [main, production]
 
 permissions:
   contents: read
@@ -175,3 +175,50 @@ jobs:
           path: ${{ env.PACKAGE_DIR }}
           if-no-files-found: error
           retention-days: 14
+
+  publish-beta:
+    name: Publish downloadable Windows beta
+    needs: package
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - name: Download tested Windows package
+        uses: actions/download-artifact@v4
+        with:
+          name: nestlive-windows-x64-${{ env.NESTLIVE_VERSION }}
+          path: release/windows
+
+      - name: Verify installer and publish prerelease
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test -s release/windows/NestLiveSetup.exe
+          cd release/windows
+          sha256sum NestLiveSetup.exe > SHA256SUMS-setup.txt
+          cd ../..
+          tag="v0.1.0-beta.${GITHUB_RUN_NUMBER}"
+          cat > release-notes.md <<'NOTES'
+          NestLive beta técnico para instalação e testes supervisionados.
+
+          **Windows x64:** baixe NestLiveSetup.exe e execute no computador
+          que opera a produção. O instalador abre a console de QR/PIN em
+          http://127.0.0.1:4317/local. Para operar, abra
+          http://127.0.0.1:4317/production/. O Node está pronto para
+          pareamento na rede privada.
+
+          **Limite de segurança:** este build NÃO possui certificação física
+          das mesas X32 e Soundcraft nem dos sistemas de exibição usados
+          nas igrejas. Confirme as funções observadas, teste com canal
+          reservado e não substitua a operação convencional durante um
+          culto sem a homologação local. Controles não certificados
+          permanecem bloqueados.
+
+          Os executáveis beta ainda não têm assinatura comercial de código.
+          Não desative as proteções do Windows para instalá-los.
+          NOTES
+          gh release create "$tag"             release/windows/NestLiveSetup.exe             release/windows/SHA256SUMS-setup.txt             --target "$GITHUB_SHA"             --title "NestLive ${tag} — Windows beta"             --notes-file release-notes.md             --prerelease

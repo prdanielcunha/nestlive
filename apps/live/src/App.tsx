@@ -252,9 +252,15 @@ export function App() {
                   ? audio.status
                   : 'desconectado'}
             </span>
-            <a className="pill workspace-link" href="/production/">
-              Produção
-            </a>
+            {configuredNode ? (
+              <a
+                className="pill workspace-link"
+                href={new URL('/production/', configuredNode.httpBaseUrl).toString()}
+                title="Abrir o painel completo de produção no NestLive Node pareado"
+              >
+                Produção local
+              </a>
+            ) : null}
             {stale ? <span className="pill pill--danger">Meter stale</span> : null}
           </div>
         </header>
@@ -365,6 +371,43 @@ export function App() {
 
         {surface === 'setup' ? (
           <>
+            {!configuredNode ? (
+              <section className="pair-card" aria-label="Instalação do NestLive">
+                <div className="pair-card__header">
+                  <div>
+                    <span className="eyebrow">PASSO 1 · COMPUTADOR DA IGREJA</span>
+                    <h2>Instale o NestLive Node</h2>
+                    <p>
+                      Para conectar a mesa e o Holyrics, Resolume ou
+                      ProPresenter, instale o NestLive no PC da produção.
+                      Depois da instalação, o painel local abre
+                      automaticamente. Use o QR/PIN para parear este navegador.
+                    </p>
+                    <p>
+                      O download é um beta técnico. Testes reais nas mesas
+                      continuam obrigatórios antes de controlar o áudio
+                      durante o culto.
+                    </p>
+                  </div>
+                  <a
+                    className="pair-primary"
+                    href="https://github.com/prdanielcunha/nestlive/releases"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    Baixar para Windows
+                  </a>
+                </div>
+                <p>
+                  Se o beta ainda não aparecer em Releases, use os
+                  <a
+                    href="https://github.com/prdanielcunha/nestlive/actions/runs/37521838561"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  > pacotes já compilados no GitHub Actions</a>.
+                </p>
+              </section>
+            ) : null}
             <NodePairingPanel
               connected={Boolean(configuredNode)}
               connection={configuredNode}
