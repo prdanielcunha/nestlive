@@ -470,7 +470,7 @@ async function main(): Promise<void> {
       const address = cloudInterface?.ipv4[0];
       const webUrl =
         process.env.NESTLIVE_WEB_URL?.trim() ||
-        'https://nestlive.millionsnest.com';
+        'https://nestlive.vercel.app';
       const nodeBase = address
         ? `http://${address}:${HTTP_PORT}`
         : undefined;
