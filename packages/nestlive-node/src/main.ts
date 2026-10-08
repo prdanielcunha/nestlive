@@ -477,7 +477,7 @@ async function main(): Promise<void> {
       const preferredWebUrl = process.env.NESTLIVE_WEB_URL?.trim();
       const pairUrl = nodeBase
         ? preferredWebUrl
-          ? `${preferredWebUrl.replace(/\\/$/, '')}/?pair=${encodeURIComponent(nodeBase)}`
+          ? `${preferredWebUrl.endsWith('/') ? preferredWebUrl.slice(0, -1) : preferredWebUrl}/?pair=${encodeURIComponent(nodeBase)}`
           : `${nodeBase}/`
         : undefined;
 
