@@ -206,8 +206,9 @@ jobs:
           NestLive beta técnico para instalação e testes supervisionados.
 
           **Windows x64:** baixe NestLiveSetup.exe e execute no computador
-          que opera a produção. O instalador abre o painel local em
-          http://127.0.0.1:4317/local e prepara o NestLive Node para
+          que opera a produção. O instalador abre a console de QR/PIN em
+          http://127.0.0.1:4317/local. Para operar, abra
+          http://127.0.0.1:4317/production/. O Node está pronto para
           pareamento na rede privada.
 
           **Limite de segurança:** este build NÃO possui certificação física

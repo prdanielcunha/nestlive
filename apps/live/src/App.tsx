@@ -255,7 +255,7 @@ export function App() {
             {configuredNode ? (
               <a
                 className="pill workspace-link"
-                href={new URL('/local', configuredNode.httpBaseUrl).toString()}
+                href={new URL('/production/', configuredNode.httpBaseUrl).toString()}
                 title="Abrir o painel completo de produção no NestLive Node pareado"
               >
                 Produção local

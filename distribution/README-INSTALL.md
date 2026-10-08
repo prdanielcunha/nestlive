@@ -19,7 +19,12 @@ O instalador:
 3. registra início automático no login;
 4. libera TCP 4317 e UDP 4318 apenas para perfil de rede privada;
 5. não libera a porta interna 4337;
-6. abre `http://127.0.0.1:4317/local`.
+6. abre `http://127.0.0.1:4317/local` (console de pareamento, QR/PIN).
+
+No computador da igreja, clique em **Abrir painel de produção** na console
+local ou acesse `http://127.0.0.1:4317/production/`.
+A console `/local` não é o workspace de operação: ela exibe o QR,
+identifica o Node e autoriza PINs.
 
 Não exige Git, PowerShell, IP ou porta no fluxo normal.
 
