@@ -104,7 +104,7 @@ export interface HolyricsAdapterOptions {
 
 export class HolyricsAdapter implements ProviderAdapter {
   readonly descriptor: ProviderDescriptor;
-  readonly observationIntervalMs = 450;
+  readonly observationIntervalMs = 1200;
   private readonly api: HolyricsApi;
   private readonly supported = new Set<Capability>();
   private grantedActions = new Set<string>();
