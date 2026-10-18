@@ -1,6 +1,9 @@
 import QRCode from 'qrcode';
 import type { LocalPairingDisplay } from '../security/pairingManager';
 
+let lastQrUrl: string | undefined;
+let lastQrSvg: Promise<string> | undefined;
+
 function escapeHtml(value: string): string {
   return value
     .replaceAll('&', '&amp;')
@@ -17,13 +20,11 @@ export async function renderNestLiveLocalConsole(input: {
   providers: string[];
   soundcraftSpikeUrl?: string;
 }): Promise<string> {
-  const qr = input.pairUrl
-    ? await QRCode.toString(input.pairUrl, {
-        type: 'svg',
-        margin: 1,
-        width: 230
-      })
-    : '';
+  if (input.pairUrl && (input.pairUrl !== lastQrUrl || !lastQrSvg)) {
+    lastQrUrl = input.pairUrl;
+    lastQrSvg = QRCode.toString(input.pairUrl, { type: 'svg', margin: 1, width: 230 });
+  }
+  const qr = input.pairUrl ? await lastQrSvg! : '';
 
   const pairings = input.pairings.length
     ? input.pairings
@@ -49,7 +50,7 @@ export async function renderNestLiveLocalConsole(input: {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta http-equiv="refresh" content="2">
+
 <title>NestLive Node</title>
 <style>
 :root{color-scheme:dark;font-family:Inter,system-ui,sans-serif;background:#0b0c11;color:#f4f5f8}
@@ -84,6 +85,10 @@ ${
 ${pairings}
 </section>
 </main>
+<script>
+setInterval(function(){if(!document.hidden)location.reload();},5000);
+document.addEventListener('visibilitychange',function(){if(!document.hidden)location.reload();});
+</script>
 </body>
 </html>`;
 }
