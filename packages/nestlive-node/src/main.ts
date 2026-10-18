@@ -1,3 +1,4 @@
+import { cachedInspector } from './network/cachedInspector';
 import { hostname, networkInterfaces, platform } from 'node:os';
 import path from 'node:path';
 import { existsSync } from 'node:fs';
@@ -155,7 +156,7 @@ async function main(): Promise<void> {
     () => providerIds.values().next().value as string | undefined
   );
 
-  const inspectNetwork = async () => {
+  const readNetwork = async () => {
     if (platform() === 'win32') {
       return inspectWindowsNetworkInterfaces(NODE_ID);
     }
@@ -175,6 +176,7 @@ async function main(): Promise<void> {
     );
     return enumerateNetworkInterfaces(NODE_ID, mapped);
   };
+  const inspectNetwork = cachedInspector(readNetwork);
 
   const registerX32 = async (input: {
     targetAddress: string;
