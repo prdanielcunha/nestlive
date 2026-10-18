@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from 'node:util';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { migrateLegacyLiveRequest, type LiveNodeRuntimeState } from '@millionsnest/nestlive-production-domain';
@@ -81,6 +82,12 @@ export class RuntimeStateStore {
     this.writeQueue = this.writeQueue
       .then(async () => {
         await this.load();
+        const previous = this.state.providerObservedState[providerId] || {};
+        const merged = { ...previous, ...observed };
+        if (isDeepStrictEqual(previous, merged)) {
+          resolveResult(structuredClone(this.state));
+          return;
+        }
         this.state = {
           ...this.state,
           providerObservedState: {
