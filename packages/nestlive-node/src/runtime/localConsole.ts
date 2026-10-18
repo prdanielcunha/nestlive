@@ -1,8 +1,16 @@
 import QRCode from 'qrcode';
 import type { LocalPairingDisplay } from '../security/pairingManager';
 
-let lastQrUrl: string | undefined;
-let lastQrSvg: Promise<string> | undefined;
+const qrCache = new Map<string, Promise<string>>();
+function qrFor(url: string): Promise<string> {
+  const cached = qrCache.get(url);
+  if (cached) return cached;
+  if (qrCache.size >= 16) qrCache.delete(qrCache.keys().next().value!);
+  const svg = QRCode.toString(url, { type: 'svg', margin: 1, width: 230 });
+  qrCache.set(url, svg);
+  void svg.catch(() => qrCache.delete(url));
+  return svg;
+}
 
 function escapeHtml(value: string): string {
   return value
@@ -16,15 +24,17 @@ function escapeHtml(value: string): string {
 export async function renderNestLiveLocalConsole(input: {
   displayName: string;
   pairUrl?: string;
+  pairUrls?: Array<{ label: string; url: string }>;
   pairings: LocalPairingDisplay[];
   providers: string[];
   soundcraftSpikeUrl?: string;
 }): Promise<string> {
-  if (input.pairUrl && (input.pairUrl !== lastQrUrl || !lastQrSvg)) {
-    lastQrUrl = input.pairUrl;
-    lastQrSvg = QRCode.toString(input.pairUrl, { type: 'svg', margin: 1, width: 230 });
-  }
-  const qr = input.pairUrl ? await lastQrSvg! : '';
+  const choices = input.pairUrls?.length ? input.pairUrls.slice(0, 16) : input.pairUrl ? [{label: 'Rede principal', url: input.pairUrl}] : [];
+  const options = await Promise.all(choices.map(async choice => {
+    const image = 'data:image/svg+xml;base64,' + Buffer.from(await qrFor(choice.url)).toString('base64');
+    return `<option value="${escapeHtml(choice.url)}" data-qr="${image}"${choice.url === input.pairUrl ? ' selected' : ''}>${escapeHtml(choice.label)}</option>`;
+  }));
+  const qr = input.pairUrl ? await qrFor(input.pairUrl) : '';
 
   const pairings = input.pairings.length
     ? input.pairings
@@ -74,7 +84,7 @@ ${input.soundcraftSpikeUrl
   : ''}
 ${
   input.pairUrl
-    ? `<div class="qr">${qr}</div><p class="muted">Escaneie com o celular ou iPad para abrir o NestLive.</p><p class="url">${escapeHtml(input.pairUrl)}</p>`
+    ? `<p class="muted">Escolha a placa do PC na rede OBPC, onde está o celular. A outra placa pode continuar na rede da mesa.</p><label>Rede do celular <select id="phone-network" style="max-width:100%">${options.join('')}</select></label><div class="qr" id="phone-qr">${qr}</div><p class="muted">Escaneie com o celular ou iPad para abrir o NestLive.</p><p class="url" id="phone-url">${escapeHtml(input.pairUrl)}</p>`
     : '<p class="muted">Conecte este PC à rede principal da igreja para gerar o QR.</p>'
 }
 </section>
@@ -86,6 +96,17 @@ ${pairings}
 </section>
 </main>
 <script>
+const network=document.getElementById('phone-network');
+function selectNetwork(){
+  if(!network)return;
+  const selected=network.selectedOptions[0];
+  if(!selected)return;
+  const image=document.createElement('img');image.src=selected.dataset.qr;image.alt='QR para celular';image.style.width='100%';
+  document.getElementById('phone-qr').replaceChildren(image);
+  document.getElementById('phone-url').textContent=selected.value;
+  try{sessionStorage.setItem('nestlive-phone-network',selected.value);}catch{}
+}
+if(network){let saved;try{saved=sessionStorage.getItem('nestlive-phone-network');}catch{}if(Array.from(network.options).some(item=>item.value===saved))network.value=saved;network.addEventListener('change',selectNetwork);selectNetwork();}
 setInterval(function(){if(!document.hidden)location.reload();},5000);
 document.addEventListener('visibilitychange',function(){if(!document.hidden)location.reload();});
 </script>
