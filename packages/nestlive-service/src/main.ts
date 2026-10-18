@@ -1,3 +1,4 @@
+import { portOccupied, reserveSupervisor } from './singleInstance';
 import { randomBytes } from 'node:crypto';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { existsSync } from 'node:fs';
@@ -102,7 +103,8 @@ function spawnChild(child: ServiceChild): ChildProcess {
     args,
     {
       env: child.env,
-      stdio: ['ignore', 'inherit', 'inherit']
+      stdio: ['ignore', 'inherit', 'inherit'],
+      windowsHide: true
     }
   );
 
@@ -122,8 +124,32 @@ function spawnChild(child: ServiceChild): ChildProcess {
 }
 
 async function main(): Promise<void> {
+  const gatewayPort = Number(process.env.NESTLIVE_HTTP_PORT || 4317);
+  const productionPort = Number(process.env.NESTLIVE_PRODUCTION_PORT || 4337);
+  let lock;
+  try { lock = await reserveSupervisor(productionPort + 1); }
+  catch (error: any) {
+    if (error?.code === 'EADDRINUSE') {
+      console.log(JSON.stringify({ event: 'nestlive_already_running', message: 'Outro supervisor já está ativo. Abra o painel existente.' }));
+      return;
+    }
+    throw error;
+  }
+  if (await portOccupied(gatewayPort) || await portOccupied(productionPort)) {
+    await new Promise<void>(resolve => lock.close(() => resolve()));
+    console.error(JSON.stringify({ event: 'nestlive_port_in_use', gatewayPort, productionPort,
+      message: 'MusicScale Live ou outro NestLive já está usando estas portas. Escolha uma única central; nenhum processo foi encerrado.' }));
+    process.exitCode = 1;
+    return;
+  }
   const children = buildServiceChildren();
-  const running = children.map(spawnChild);
+  const running: ChildProcess[] = [];
+  try { for (const child of children) running.push(spawnChild(child)); }
+  catch (error) {
+    for (const child of running) child.kill('SIGTERM');
+    lock.close();
+    throw error;
+  }
 
   console.log(
     JSON.stringify({
@@ -138,6 +164,7 @@ async function main(): Promise<void> {
   const stop = () => {
     if (stopping) return;
     stopping = true;
+    lock.close();
 
     for (const child of running) {
       if (!child.killed) child.kill('SIGTERM');
