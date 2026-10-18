@@ -1,3 +1,4 @@
+import { cachedInspector } from './network/cachedInspector';
 import { hostname, networkInterfaces, platform } from 'node:os';
 import path from 'node:path';
 import { existsSync } from 'node:fs';
@@ -155,7 +156,7 @@ async function main(): Promise<void> {
     () => providerIds.values().next().value as string | undefined
   );
 
-  const inspectNetwork = async () => {
+  const readNetwork = async () => {
     if (platform() === 'win32') {
       return inspectWindowsNetworkInterfaces(NODE_ID);
     }
@@ -175,6 +176,7 @@ async function main(): Promise<void> {
     );
     return enumerateNetworkInterfaces(NODE_ID, mapped);
   };
+  const inspectNetwork = cachedInspector(readNetwork);
 
   const registerX32 = async (input: {
     targetAddress: string;
@@ -461,13 +463,13 @@ async function main(): Promise<void> {
     },
     webRoot: WEB_ROOT,
     productionWebRoot: PRODUCTION_WEB_ROOT,
-    localConsoleHtml: async () => {
+    localConsoleHtml: async (nonce) => {
       const interfaces = await inspectNetwork();
       const plan = buildPreDiscoveryNetworkPlan(interfaces);
       const cloudInterface = interfaces.find(
         item => item.id === plan.cloudInterfaceId
       );
-      const address = cloudInterface?.ipv4[0];
+      const address = cloudInterface?.ipv4[0] ?? interfaces.find(item => item.status === 'online')?.ipv4[0];
       const nodeBase = address
         ? `http://${address}:${HTTP_PORT}`
         : undefined;
@@ -483,7 +485,13 @@ async function main(): Promise<void> {
 
       return renderNestLiveLocalConsole({
         displayName: DISPLAY_NAME,
+        nonce,
         pairUrl,
+        pairUrls: interfaces.filter(item => item.status === 'online').flatMap(item => item.ipv4.map(ip => {
+          const base = `http://${ip}:${HTTP_PORT}`;
+          return { label: `${item.humanName} · ${ip}`, url: preferredWebUrl
+            ? `${preferredWebUrl.replace(/\/$/, '')}/?pair=${encodeURIComponent(base)}` : `${base}/` };
+        })),
         pairings: pairing.localDisplay(),
         providers: runtime
           .listProviders()

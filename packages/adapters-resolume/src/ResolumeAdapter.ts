@@ -41,7 +41,7 @@ export interface ResolumeAdapterOptions {
 
 export class ResolumeAdapter implements ProviderAdapter {
   readonly descriptor: ProviderDescriptor;
-  readonly observationIntervalMs = 300;
+  readonly observationIntervalMs = 1500;
   private readonly api: ResolumeRestApi;
   private readonly realtime?: ResolumeRealtimeClient;
   private readonly supported = new Set<Capability>();

@@ -1,4 +1,4 @@
-import { mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -197,4 +197,19 @@ describe('RuntimeStateStore', () => {
     expect(state.providerObservedState['resolume-primary']).toBeTruthy();
     expect(state.providerObservedState['propresenter-primary']).toBeTruthy();
   });
+});
+
+it('keeps crash-recovery revision and disk content unchanged for repeated provider observations', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'nestlive-no-op-'));
+  const file = join(dir, 'runtime.json');
+  const store = new RuntimeStateStore(file, 'test-node');
+  const first = await store.mergeProviderObservedState('holyrics', { slide: 1, song: { title: 'Teste' } });
+  const disk = await readFile(file, 'utf8');
+  const repeated = await Promise.all(Array.from({ length: 30 }, () =>
+    store.mergeProviderObservedState('holyrics', { song: { title: 'Teste' }, slide: 1 })));
+  expect(repeated.every(state => state.revision === first.revision)).toBe(true);
+  expect(await readFile(file, 'utf8')).toBe(disk);
+  const changed = await store.mergeProviderObservedState('holyrics', { slide: 2 });
+  expect(changed.revision).toBe(first.revision + 1);
+  expect((await new RuntimeStateStore(file, 'test-node').load()).providerObservedState.holyrics?.slide).toBe(2);
 });
