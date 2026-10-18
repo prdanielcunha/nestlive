@@ -23,6 +23,7 @@ function escapeHtml(value: string): string {
 
 export async function renderNestLiveLocalConsole(input: {
   displayName: string;
+  nonce?: string;
   pairUrl?: string;
   pairUrls?: Array<{ label: string; url: string }>;
   pairings: LocalPairingDisplay[];
@@ -95,7 +96,7 @@ ${
 ${pairings}
 </section>
 </main>
-<script>
+<script nonce="${escapeHtml(input.nonce ?? '')}">
 const network=document.getElementById('phone-network');
 function selectNetwork(){
   if(!network)return;
