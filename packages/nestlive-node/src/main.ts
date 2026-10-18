@@ -463,7 +463,7 @@ async function main(): Promise<void> {
     },
     webRoot: WEB_ROOT,
     productionWebRoot: PRODUCTION_WEB_ROOT,
-    localConsoleHtml: async () => {
+    localConsoleHtml: async (nonce) => {
       const interfaces = await inspectNetwork();
       const plan = buildPreDiscoveryNetworkPlan(interfaces);
       const cloudInterface = interfaces.find(
@@ -485,6 +485,7 @@ async function main(): Promise<void> {
 
       return renderNestLiveLocalConsole({
         displayName: DISPLAY_NAME,
+        nonce,
         pairUrl,
         pairUrls: interfaces.filter(item => item.status === 'online').flatMap(item => item.ipv4.map(ip => {
           const base = `http://${ip}:${HTTP_PORT}`;
