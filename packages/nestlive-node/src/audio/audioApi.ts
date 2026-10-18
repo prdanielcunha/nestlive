@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import http from 'node:http';
 import type {
   AudioCommandEnvelope,
@@ -136,7 +137,7 @@ export interface AudioApiServerOptions {
     providerInstanceId: string;
     state: unknown;
   }>;
-  localConsoleHtml?: () => Promise<string>;
+  localConsoleHtml?: (nonce: string) => Promise<string>;
   webRoot?: string;
   productionWebRoot?: string;
   productionProxy?: ProductionProxyConfig;
@@ -303,11 +304,12 @@ export class AudioApiServer {
         response.statusCode = 200;
         response.setHeader('content-type', 'text/html; charset=utf-8');
         response.setHeader('cache-control', 'no-store');
+        const nonce = randomBytes(18).toString('base64');
         response.setHeader(
           'content-security-policy',
-          "default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; frame-ancestors 'none'"
+          `default-src 'none'; style-src 'unsafe-inline'; img-src data:; script-src 'nonce-${nonce}'; base-uri 'none'; frame-ancestors 'none'`
         );
-        response.end(await this.options.localConsoleHtml());
+        response.end(await this.options.localConsoleHtml(nonce));
         return;
       }
 
