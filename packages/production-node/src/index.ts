@@ -282,6 +282,9 @@ async function registerHolyricsProvider(): Promise<{
 }
 
 
+let resolumeAbsentAttempts = 0;
+let nextResolumeDetectionAt = 0;
+
 async function registerResolumeProvider(): Promise<{
   configured: boolean;
   source: 'environment' | 'local' | 'detected' | 'none';
@@ -313,11 +316,12 @@ async function registerResolumeProvider(): Promise<{
 
   if (autoDetect && !probe.reachable) {
     capabilityEngine.unregister('resolume-primary');
-    console.log(JSON.stringify({
+    if (resolumeAbsentAttempts === 0) console.log(JSON.stringify({
       event: 'provider_not_detected',
       providerKey: 'resolume',
       candidate: baseUrl
     }));
+    nextResolumeDetectionAt = Date.now() + Math.min(60000, 10000 * 2 ** Math.min(resolumeAbsentAttempts++, 3));
     return {
       configured: false,
       source: 'none',
@@ -326,6 +330,8 @@ async function registerResolumeProvider(): Promise<{
     };
   }
 
+  resolumeAbsentAttempts = 0;
+  nextResolumeDetectionAt = 0;
   console.log(JSON.stringify({
     event: autoDetect ? 'provider_auto_detected' : 'provider_probe',
     providerKey: 'resolume',
@@ -538,10 +544,14 @@ function observeOnlineProviders(): void {
   }
 }
 
+let recoveryInFlight = false;
 async function recoverUnhealthyProviders(): Promise<void> {
+  if (recoveryInFlight) return;
+  recoveryInFlight = true;
+  try {
   if (!capabilityEngine.get('resolume-primary')) {
     const configuredResolume = RESOLUME_URL || (await providerConfigStore.getResolume())?.baseUrl;
-    if (!configuredResolume) {
+    if (!configuredResolume && Date.now() >= nextResolumeDetectionAt) {
       await registerResolumeProvider();
     }
   }
@@ -570,6 +580,7 @@ async function recoverUnhealthyProviders(): Promise<void> {
       }));
     }
   }
+  } finally { recoveryInFlight = false; }
 }
 
 function lanAddresses(): string[] {
@@ -3659,7 +3670,7 @@ async function start(): Promise<void> {
 
   const providerObservationTimer = setInterval(() => {
     observeOnlineProviders();
-  }, 100);
+  }, 250);
   providerObservationTimer.unref();
 
   const providerRecoveryTimer = setInterval(() => {
