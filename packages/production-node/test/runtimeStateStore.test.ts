@@ -211,5 +211,5 @@ it('keeps crash-recovery revision and disk content unchanged for repeated provid
   expect(await readFile(file, 'utf8')).toBe(disk);
   const changed = await store.mergeProviderObservedState('holyrics', { slide: 2 });
   expect(changed.revision).toBe(first.revision + 1);
-  expect((await new RuntimeStateStore(file, 'test-node').load()).providerObservedState.holyrics.slide).toBe(2);
+  expect((await new RuntimeStateStore(file, 'test-node').load()).providerObservedState.holyrics?.slide).toBe(2);
 });
