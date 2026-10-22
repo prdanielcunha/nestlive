@@ -1,3 +1,4 @@
+import millionsNestMark from './assets/millionsnest-mark.png';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App';
@@ -9,7 +10,7 @@ function HandoffFailure(props: { message: string }) {
   return (
     <main className="remote-gate">
       <section className="remote-gate__card">
-        <span className="eyebrow">NESTLIVE · MILLIONSNEST</span>
+        <span className="eyebrow"><img src={millionsNestMark} alt="" aria-hidden="true" width={20} height={20} style={{display:"inline-block",width:20,height:20,objectFit:"contain",verticalAlign:"middle",marginRight:8}} />NESTLIVE · MILLIONSNEST</span>
         <h1>Não foi possível validar o acesso</h1>
         <p>
           Volte ao MillionsNest Hub e abra o NestLive novamente.
